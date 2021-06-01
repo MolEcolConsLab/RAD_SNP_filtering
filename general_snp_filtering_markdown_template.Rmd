@@ -14,9 +14,9 @@ date: "4/27/2021"
 
 ##Checked the below script with the reference-based vcf file for water voles. Everything works, except a warning is issued in the final chunk when we create the radiator_temp dataframe for export saying that NAs were introduced by coercion. The dataframe will still export as expected.
 
-## Note: Additional filters/plots to consider (from O'Leary et. al.:
+## Note: Additional filters/plots to consider (from O'Leary et. al.):
 1) % contribution from forward and reverse read (?)
-2) allele balance (already addressed with HDPlot, I think)
+2) allele balance (already addressed with HDPlot, I think) #LMK_comment: I think what you are referring to is different from the check for excess homozygotes as per Hendricks et al., correct? If yes, then please add this as a an additional step to check
 
 ## Install and load libraries
 ```{r load libraries, message=FALSE, warning=FALSE}
@@ -44,12 +44,12 @@ library(radiator)
 library(SeqArray)
 library(genetics)
 
-#Source custom functions
-source("~/R/R_working_dir/Cownose_PopConn/03_snp_filtering/scripts/ggplot.R")
-source("~/R/R_working_dir/Cownose_PopConn/03_snp_filtering/scripts/VCFfilterstats.R")
-source("~/R/R_working_dir/Cownose_PopConn/03_snp_filtering/scripts/xtrafunctions.R")
-source("~/R/R_working_dir/Cownose_PopConn/03_snp_filtering/scripts/plotstats.R")
-source("~/R/R_working_dir/Cownose_PopConn/03_snp_filtering/scripts/filterSNPs.R")
+#Source custom functions (change paths accordingly if needed)
+source("scripts/ggplot.R")
+source("scripts/VCFfilterstats.R")
+source("scripts/xtrafunctions.R")
+source("scripts/plotstats.R")
+source("scripts/filterSNPs.R")
 
 options(dplyr.summarise.inform = FALSE) #Shut down notices for summarise (they're annoying)
 ```
@@ -67,7 +67,7 @@ options(dplyr.summarise.inform = FALSE) #Shut down notices for summarise (they'r
 10) Export data
 
 **How to navigate this document:**
-The steps summarized above are split into chunks. An accompanying HackMD can be found here: https://hackmd.io/io3eZlAyRGusdqKY3222gA?view. A summary of what each chunk does, as well as any required input files, are just above each chunk and reiterated in the HackMD. Most of the time, the required input files will just be the output of the previous chunks. Any parameters required in a chunk will be specified at the top.
+The steps summarized above are split into chunks. An accompanying Gist document with example graphs and explanation is linked in the Github repository. A summary of what each chunk does, as well as any required input files, are just above each chunk and reiterated in that document. Most of the time, the required input files will just be the output of the previous chunks. Any parameters required in a chunk will be specified at the top.
 
 Move through this document one section at a time, monitoring the output and setting the filters accordingly.
 
@@ -76,7 +76,7 @@ Move through this document one section at a time, monitoring the output and sett
 The following folders/files should be present in your working directory. *The below code assumes you are running the chunks from your working directory so the relative file paths are accurate.*
 
 1. a folder called "data" containing the following files, all of which should have been output by vcftools into the "09_vcftools_out" folder in the previous step:
-  - a .vcf file *less than 1GB in size* containing all variants and samples output by vcftools. This will usually end with ".recode.vcf"
+  - a .vcf file *less than 1GB in size* containing all variants and samples output by vcftools. This will usually end with ".recode.vcf" *(the recommended file size is so that this can be run locally on most laptop or desktop computers, and is reasonable for a SNP file lightly filtered from vcftools and with moderate sample sizes. Those with very large sample sizes and/or loci may be larger than this, and could be run on a computer with more capacity, or this markdown doc could be amended to be run as a script on a cluster, etc.-but we haven't tested it that way yet)*
   - .het file with individual heterozygosity
   - .idepth file with depth info by individual
   - .imiss file with missingness info by individual
@@ -113,11 +113,11 @@ The dark blue line in each graph is the mean.
 
 
 ```{r stats raw, fig.height=20, fig.width=10, message=FALSE, warning=FALSE}
-setwd("~/R/R_working_dir/")
+#setwd("...") #(if desired, else comment out)
 # load stats files - O'Leary ----
-file_directory <- "~/R/R_working_dir/"
+file_directory <- "./data/"
 file_prefix <- "CNR_raw"
-popmap_file <- "CNR_popmap"
+popmap_file <- "popmap_all"
 
 #Load stats files for viz
 ind_stats_raw <- read.ind.stats(dir = file_directory, vcf = file_prefix) #Requires the output files from vcftools with the following extensions: .idepth, .imiss, .het
@@ -127,14 +127,16 @@ loc_stats_raw <- read.loc.stats(dir = file_directory, vcf = file_prefix) #Requir
 plot_stats_init(ind_stats_raw, loc_stats_raw)
 ```
 
-Data set contains `r nrow(ind_stats_raw)` individuals and `r nrow(loc_stats_raw)` loci.
+Data set contains `r nrow(ind_stats_raw)` individuals and `r nrow(loc_stats_raw)` loci. #LMK_comment: is this supposed to be here? or is it supposed to be in quotes to print in the chunk?
 
 
 
 
 ## Chunk 2: Read in VCF and create tidy dataframes
 
-This chunk uses the program vcfR to read the population map and vcf file into R and "tidy" the dataframe (i.e. convert it to long format), which allows us to easily visualize and filter the data. The meta, fixed, and genotype regions of the vcf file are converted into separate components of a list, but we will just be working with the dataframes corresponding to the fixed and genotype components. The fixed dataframe is used for filtering loci, and the genotype dataframe is used for filtering samples. In the end, we will use the fixed dataframe to filter loci from the genotype dataframe, and the final genotype dataframe will be exported using radiator.
+This chunk uses the program vcfR to read the population map^ and vcf file into R and "tidy" the dataframe (i.e. convert it to long format), which allows us to easily visualize and filter the data. The meta, fixed, and genotype regions of the vcf file are converted into separate components of a list, but we will just be working with the dataframes corresponding to the fixed and genotype components. The fixed dataframe is used for filtering loci, and the genotype dataframe is used for filtering samples. In the end, we will use the fixed dataframe to filter loci from the genotype dataframe, and the final genotype dataframe will be exported using radiator.
+
+^A population map file is a text file that has the metadata for your samples that you want to read in and link to the sample IDs in the vcf file. In many cases for general pop gen, this will be locations and/or season/year 
 
 **Note** this chunk will take a few minutes to run.
 
@@ -179,7 +181,7 @@ Use the graphs from above to aid in determining the thresholds you'd like to set
 
 There are three steps to the next chunk:
 Step 1: decide the minimum depth below which a locus will be classified as "missing' and then visualize the amount of missing data per individual.
-Step 2: based on the plot in the plot window, decide on the degree of data missingness that constitutes calling an individual as "failed". These individuals will be filtered before running any additional calculations.
+Step 2: based on the plot in the plot window, decide on the degree of data missingness that constitutes calling an individual as "failed". These individuals will be filtered before running any additional calculations. **This is an important step especially for smaller datasets where a number of samples didn't sequence well, because they will count towards the percentage of the total and can result in good loci being thrown out. In our experience,there is often a very obvious break between samples and worked and those that failed to help set this threshold as appropriate for the data**
 Step 3: set additional thresholds for filtering individuals and loci based on data missingness values calculated *after* removing failed individuals and low depth loci.
 
 **Regarding "targets"** ... Because filtering is mostly done using means across individuals and/or loci, setting a "target" allows us to visualize how well our mean-based filtering removed individual samples and/or loci. These "target" metrics will show up as a light blue line in downstream graphs, but are not used for anything else.
@@ -213,7 +215,7 @@ Ipass <- 70
 ##Step 3: set criteria for additional filtering AFTER removing failed individuals and low-depth loci and recalculating missingness.
 Imiss <- 30 #After removing failed individuals, filter individuals that still have this much missing data or more
 Lmiss <- 10 #After removing failed individuals, remove loci that are missing in this percent of individuals
-#minor_allele_indv <- 0 #Number of individuals the minor allele must be present in #JDS: remove?
+#minor_allele_indv <- 0 #Number of individuals the minor allele must be present in #JDS: remove? #LMK: I'd explain why this is here and keep, pointing out that (if I'm understanding how you used it below) if it's kept at 0 then it's redundant to removing non-variant "SNPs" below, but there may be reasons to set higher. Related, is there an MAF filter anywhere here or earlier in the workflows? If not we'll want to address.
 
 ####------For viz only-------####
 min_mean_depth_lim <- 10 #minimum mean depth used in vcftools
@@ -237,7 +239,7 @@ Finally, we calculate the number of SNPs per locus after filtering.
 
 **This chunk takes ~ a minute to run**
 
-*Presently, the script removes loci that have a mean depth (across individuals) that is > 2 standard deviations from the mean.*
+*Presently, the script removes loci that have a mean depth (across individuals) that is > 2 standard deviations from the mean. This can be adjusted as appropriate/desired for each dataset.*
 
 **No required parameters for this chunk; they're all set in the previous chunk**
 ```{r}
@@ -281,7 +283,7 @@ red line = threshold ie shouldn't be any above/below this point (depending on th
 
 **No required parameters for this chunk**
 ```{r}
-source("~/R/R_working_dir/Cownose_PopConn/03_snp_filtering/scripts/plotstats.R")
+source("./scripts/plotstats.R")#LMK: FYI this is currently redundant to first chunk reading in all the scripts to source
 
 plot_ind_stats_filt(keep_indv, keep_loci, mean_read_depth_indv, mean_read_depth_loci)
 
@@ -302,7 +304,7 @@ SNPs_per_locus %>%
 
 This chunk will calculate individual heterozygosity and produce a graph of individual level heterozygosity and a table showing how many SNPs conform (or don't) to hardy-weinberg equilibrium (HWE) based on the threshold we set for HWE_inquire at the top of the chunk.
 
-**The main purpose of this chunk** is to help us identify an appropriate threshold for heterozygosity to filter samples that are likely to be contaminated, and to help us refine our threshold for filtering loci based on concordance with hardy-weinberg. When the chunk is finished running, see the graph for plots of individual-level heterozygosity, and the console for the number of SNPs that conform/don't to HWE based on the user-defined threshold. If we don't have well-defined populations yet - ie if we are planning to use these data to identify putative subpopulations - then it's wise to set the threshold to a very low e.g. .000001 value.
+**The main purpose of this chunk** is to help us identify an appropriate threshold for heterozygosity to filter samples that are likely to be contaminated, and to help us refine our threshold for filtering loci based on concordance with hardy-weinberg. When the chunk is finished running, see the graph for plots of individual-level heterozygosity, and the console for the number of SNPs that conform/don't to HWE based on the user-defined threshold. If we don't have well-defined populations yet - ie if we are planning to use these data to identify putative subpopulations - then it's wise to set the threshold to a very low e.g. .000001 value. *Also reminder: filtering by HWE is appropriate for analyses that should be run using putatively neutral loci. But this should be omitted/adjusted for other analyses aiming for loci under selection, etc.*
 
 
 See this site for more information about general filtering for HWE: https://thierrygosselin.github.io/radiator/reference/filter_hwe.html
@@ -311,7 +313,7 @@ See this site for more information about general filtering for HWE: https://thie
 
 **Required parameters:** threshold for evaluating how many SNPs are in/out of HWE.
 ```{r}
-source("~/R/R_working_dir/Cownose_PopConn/03_snp_filtering/scripts/filterSNPs.R")
+source("./scripts/filterSNPs.R")#LMK: FYI this is currently redundant to first chunk reading in all the scripts to source
 HWE_inquire <- 0.000001
 
 Obs_het_indv <- calc_het(gt_tidy_filt2) #Checked 05/23/2021
@@ -361,20 +363,21 @@ fix_tidy_filt2 <- fix_tidy_filt1 %>%
 
 #Filter for short-distance LD
 ##JDS note: Comment out below if reference-based approach was used upstream
-# LD_loci_to_keep <- fix_tidy_filt2 %>% group_by(CHROM) %>%
-#   slice_sample(n=1)
+ LD_loci_to_keep <- fix_tidy_filt2 %>% group_by(CHROM) %>%
+  slice_sample(n=1)
 
 
 ####------Create final filtered dataframes------####
 ##If filtered for short-distance LD above, uncomment semi_join below.
-fix_tidy_filt_final <- fix_tidy_filt2 #%>% semi_join(LD_loci_to_keep, by = c("ChromKey", "CHROM", "POS"))
+fix_tidy_filt_final <- fix_tidy_filt2 %>% semi_join(LD_loci_to_keep, by = c("ChromKey", "CHROM", "POS"))#run this for de novo when want to filter by short LD
+#fix_tidy_filt_final <- fix_tidy_filt2 #run this one for reference baesd and/or when DONT want to filter for short LD (e.g., creating microhaplotypes, etc.)
 
 fix_tidy_4_final_merge <- fix_tidy_filt_final %>% dplyr::select(ChromKey, CHROM, POS, REF, ALT)
 
 gt_tidy_filt_final <- gt_tidy_filt2 %>% 
   anti_join(gt_tidy_hetero_remove, by = "Indiv") %>% 
   inner_join(fix_tidy_4_final_merge, by = c("ChromKey", "POS")) #%>% 
-  dplyr::select(ChromKey, CHROM, POS, Indiv, gt_AD, gt_DP, gt_HQ, gt_GL, gt_GQ, gt_GT, gt_GT_alleles, allele_A, allele_B, zygosity, REF, ALT)
+  dplyr::select(ChromKey, CHROM, POS, Indiv, gt_AD, gt_DP, gt_HQ, gt_GL, gt_GQ, gt_GT, gt_GT_alleles, allele_A, allele_B, zygosity, REF, ALT)#LMK: When the LD_loci_to_keep line is commented out, this line gives an error that ChromKey isn't found; may need to be adjusted for ref based/no short LD filtering option
   
 final_sumstats()
 ```
@@ -433,7 +436,8 @@ light blue line = target
 red line = threshold ie shouldn't be any above this point
 **No required parameters for this chunk**
 ```{r}
-source("~/R/R_working_dir/Cownose_PopConn/03_snp_filtering/scripts/plotstats.R")
+source("./scripts/plotstats.R")#LMK: FYI this is currently redundant to first chunk reading in all the scripts to source
+
 #Plot final individual stats
 plot_final_indv(final_indv_stats, final_loc_stats, final_mean_depth_indv, final_mean_depth_loc)
 
@@ -445,7 +449,7 @@ plot_final_pop(final_indv_stats, final_mean_depth_indv)
 plot_final_het_denovo(final_SNPs_per_locus, final_obs_het_indv)
 
 #If reference was used upstream, run below
-plot_final_het_reference(final_obs_het_indv)
+#plot_final_het_reference(final_obs_het_indv)
 ```
 
 
@@ -520,10 +524,8 @@ genind <- radiator::write_genind(radiator_temp, write = TRUE) #radiator -- WORKS
 
 #export to genlight using vcfR 
 #have to read in vcf file exported above to vcfR object, then use vcfR to export. The file stays within R
-vcf_int <- vcfR::read.vcfR("radiator_CNR_filtered_vcf_05.24.2021.vcf")
+vcf_int <- vcfR::read.vcfR("radiator_ref_filtered_vcf_05.24.2021.vcf") #LMK I changed what I think was a holdover typo here (it was vcf_int <- vcfR::read.vcfR("radiator_CNR_filtered_vcf_05.24.2021.vcf"), JDS can you confirm this is correct?
 genlight <- vcfR2genlight(vcf_int) #vcfR
-
-
 
 #Remove intermediate vcf file from environment
 vcf_int <- NULL
@@ -538,7 +540,7 @@ genepop <- radiator::write_genepop(radiator_temp, filename = "CNR_filtered_genep
 gtypes <- radiator::write_gtypes(radiator_temp, write = TRUE) #radiator -- WORKS
 ```
 
-
+#LMK: John should we remove the code below this point from the template, or are there valuable things in here that we'll want to update and add in over time?
 
 
 
