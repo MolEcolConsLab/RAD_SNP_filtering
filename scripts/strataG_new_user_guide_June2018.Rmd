@@ -1,0 +1,424 @@
+---
+title: "StrataG new user guide June 2018"
+author: "Shreya Banerjee"
+date: "May 30, 2018"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#What is StrataG?
+
+strataG is an R package developed by NOAA scientists for population genetic analyses. strataG is a toolkit for haploid sequence and multilocus genetic data summaries, and analyses of population structure. This package uses existing population genetics program, and allows you to use them all in one console, without having to reformat your raw data for each program! The purpose of this document is to guide you through using strataG to conduct basic genetic data QA/QC and Population genetic analyses. StrataG has lots of other applications which we do not cover here.
+
+For more information check out https://github.com/EricArcher/strataG
+
+Archer, F. I., Adams, P. E. and Schneiders, B. B. (2016), strataG: An R package for manipulating, summarizing and analysing population genetic data. Mol Ecol Resour. doi:10.1111/1755-0998.12559
+
+#Set-up
+
+This guide assumes you have a basic familiarity with R. Click [here](https://cran.r-project.org/doc/contrib/Paradis-rdebuts_en.pdf) for a basic introduction to R. You can also use the code below to install and in-console interactive R tutorial (remove #'s to run).
+```{r}
+#install.packages('swirl')
+#library(swirl)
+#swirl()
+```
+Remember, you can look up how to use any 'function' with the code:
+```{r}
+#?function()
+#?plot()
+```
+
+StrataG uses the programs GenePop and STRUCTURE for some functions. In order to run these functions in R you need to install these programs on your computer, compile them, and move them to a location where R can access them. Below are instructions to install GenePop on a Mac computer. Installing STRUCTURE should be the same. 
+
+MAC USERS
+
+1. Compiling GenePop: 
+* go to: http://kimura.univ-montp2.fr/%7Erousset/Genepop.htm
+* download 'sources.zip' 
+* open a terminal window, change the directory to wherever your download goes to/where you put the sources.zip folder. For example: ```cd Downloads/sources```
+* note that command line is sensitive to cases
+* once you are in the right directory, enter the following command into terminal and hit enter to compile Genepop: ```g++ -DNO_MODULES -o Genepop GenepopS.cpp -O3```
+* If you do not have Apple developer tools installed already (Xcode), it will prompt you asking if you want it to install them. Say yes, it will install them, then run the command above again to compile GenePop.
+* see this website for further/updated information: [http://genepop.curtin.edu.au](http://genepop.curtin.edu.au)
+
+2. Moving files:
+* cd to where Genepop is if you aren't already
+* can check that you are in the right place with the program using ```ls -lh```
+* type in the command: ```cp Genepop /usr/local/bin/.```
+* likely it will tell you permission is denied, because there are safeguards on this folder so anyone can't come in and put executable files in there that could damage your system.
+* so then type command: ```sudo cp file /usr/local/bin/```
+* it will prompt for password-this is the password you likely already set up for logging in/making changes to your computer
+* if it worked, you won't see anything (except the prompt line comes back). If not, you'll get an error message of some sort for why not 
+
+WINDOWS USERS
+* go to: http://kimura.univ-montp2.fr/%7Erousset/Genepop.htm
+* download 'exe.zip' 
+* unzip folders until you can access the genepop.exe file
+* drag and drop the genepop.exe file to your working directory
+
+You need to install 'devtools' and 'Rtools' to install strataG. Run the following:
+```{r}
+#if (!require('devtools')) install.packages('devtools')
+#if (!require('Rtools')) install.packages('Rtools')
+```
+
+Now you can install the most current version of StrataG! If you like, you can run this code each time before you start working to have the most updated version, but it takes a while to run, so it is recommended to do this monthly.
+
+```{r}
+#devtools::install_github('ericarcher/strataG', build_vignettes = TRUE)
+```
+
+Note for new R users: if the package is not installing read the error messages. If it says something about missing package "package.name" you can install this package with the code `install.packages("package.name")`. 
+
+To familiarize yourself with strataG you can check out the vignettes or examples of code using preloaded data. You can access these online https://github.com/EricArcher/strataG or in console with the code:
+```{r}
+#browseVignettes("strataG")
+#vignette("gtypes")
+```
+## Load the necessary packages and set up your working directory 
+
+Follow along with this [tutorial](https://github.com/lkomoro/Pac-Green-Turtle-Pop-Gen-Analysis/blob/master/CmPac_msat_popgen_project.Rmd)
+
+```{r echo=TRUE, warning= FALSE}
+library(strataG)
+library(dplyr) 
+```
+make it so that all values in any data frames are converted to factors
+```{r}
+options(stringAsFactors = F)
+```
+Check that you are in the correct working directory (and change to a different directory if needed).
+```{r}
+getwd() 
+#setwd("desired/directory") 
+```
+
+# Getting your Data into R 
+
+In this guide, we use a microsatellite data set for an example. You can also use strataG to analyze other types of genetic data (SNPs, mitochondiral DNA, etc.).
+
+To get started, you need a [csv file](https://support.bigcommerce.com/articles/Public/What-is-a-CSV-file-and-how-do-I-save-my-spreadsheet-as-one) That includes your Strata (Grouping variable, likely your different populations), your sample names, and your genotypes (each allele as a column). For example:
+
+```{r echo=FALSE, warning=FALSE}
+setwd("C:/Users/Genetics Lab/Desktop/strataG")
+Description <- "Pac_Cm_msat_strataG_SB_3.2.18"
+strata.file <-"Pac_Cm_Strata_111317.csv" 
+genotypes.file <- "Pac_Cm_genodata_111317.csv"
+Msat.Cm.geno <- readGenData(genotypes.file) 
+Msat.Cm.strata <- readGenData(strata.file)
+df <- Msat.Cm.geno[c(22,23, 74, 75, 295, 296), c(1, 3:7)]
+colnames(df) <- c("Strata", "Sample ID", "LocA_1", "LocA_2", "LocB_1", "LocB_2")
+library(knitr)
+kable(df)
+```
+
+You can also include a csv file of your stratification schemes, which should include a column for your sample names, and a column for each of your strata (grouping variables). Your stratification schemes determine how you group individuals for genetic structure analysis. You can analyze genetic structure on different spatial scales, with different groupings of individuals. For example:
+
+```{r echo=FALSE, warning=FALSE}
+df <- Msat.Cm.strata[c(22,23, 74, 75, 295, 296),c(1:2)]
+colnames(df) <- c("Sample ID", "Strata")
+library(knitr)
+kable(df)
+```
+
+It is important that both your genotypes file and stratification scheme file have the same sample IDs.
+
+## Let's load our data
+
+Here we set up varaiables for our specific files. If you adjust this section to fit your data you should be able to run most of the code with few or no modifications. 
+```{r}
+setwd("C:/Users/Genetics Lab/Desktop/strataG")
+Description <- "Pac_Cm_msat_strataG_SB_3.2.18"
+strata.file <-"Pac_Cm_Strata_111317.csv" 
+genotypes.file <- "Pac_Cm_genodata_111317.csv"
+```
+Now we want to read our csv files into R
+```{r}
+Msat.Cm.geno <- readGenData(genotypes.file) 
+Msat.Cm.strata <- readGenData(strata.file) 
+```
+
+Pick how you want to stratification schemes you want to use to group your individuals for genetic structure analysis.
+```{r}
+strata.schemes <- Msat.Cm.strata[, c("Broad","Fine")]
+rownames(strata.schemes) <- Msat.Cm.strata$Lab_ID 
+```
+We need to change any 0's to NAs because strataG will read 0's as alleles rather than as missing data (obscuring QA/QC results for missing data, and possibly skew subsequent analyses).
+```{r}
+Msat.Cm.geno[Msat.Cm.geno==0]=NA 
+```
+you can use following code to check that you have removed all the 0's
+```{r}
+View(Msat.Cm.geno)
+```
+
+# Data QA/QC
+Before we run any genetic analyses, we must examine several key aspects of our data in order to correctly interpret results. The following steps ensure that our genotype data are high quality and that our conclusions are robust. Note that this package does not explicitly test genotyping error, but it can be semi-quantitatively assessed via the duplicate checks, especially if you include replicates in your sample processing. For microsatellites, it is good practice to have a second genotyper independently call some portion of your alleles to assess genotyping error, and  important to only include allele calls you are confident in; for SNPs it is useful to include replicates of a subset of samples in multiple libraries and sequencing runs (if applicable).  
+The first few steps of QA/QC can be done with the data frames as imported above. Then we will then create a gtypes object, which is a combination of all our data in a format that is compatible with the strataG package, to use for the next steps of QA/QC and for genetic structure analysis.
+
+## I. Remove problematic samples and strata
+###   1. Remove samples with lots of missing genotypes
+
+We want to remove samples that are missing data for too many loci. We traditionally generally err on the side of being conservative and only include samples with 80%of called genotypes in which we have confidence, but this may depend on the project and dataset. A sample that did not amplify for multiple markers may yield false results for markers for which it did amplify.
+Make this number of columns in your genotype data that are not alleles (aka sample IDs or strata)
+
+```{r}
+geno.data.start<-3 
+```
+Set the minimum percent of missing alleles an individual can have to be included in your analysis
+```{r}
+min.percent <- .20 
+```
+Make a list of the number of NAs in each row.
+```{r}
+numNAs<-apply(Msat.Cm.geno, 1, function(z) sum(is.na(z))) 
+```
+remove rows where there are more NA alleles than min.percent of all alleles
+```{r}
+Msat.Cm.geno.a<-Msat.Cm.geno[!(numNAs>((ncol(Msat.Cm.geno)-geno.data.start))*min.percent),]
+```
+
+###   2. Remove strata with low sample sizes
+
+It is important that the strata you are looking for genetic structure between have similar sample sizes, because typically increasing sample sizes increase genetic diversity found in a group of individuals. One strata with very few samples may erroneously seem to be strongly divergent from other samples. You can choose to remove strata with small samples sizes, or you can also switch to a broader stratification scheme (less groups with more samples in each group). 
+
+Check how many samples there are per "Broad" strata.
+```{r}
+t1<-table(Msat.Cm.geno.a$Broad)
+#t1
+```
+```{r echo=FALSE}
+t1[c(2, 9, 7, 6)]
+```
+You can run this code to remove a specific strata. Remeber that Broad is the column name for the stratification scheme you are using.
+```{r}
+Msat.Cm.geno.short<-subset(Msat.Cm.geno.a, Broad!= "GUAM")
+```
+All of our strata seem to have reasonable sample sizes so we will move forward with all of our strata.
+
+## Make a gtype object for further QA/QC
+strataG works with objects called gtypes. A gtype object can include several different components:  
+*	A data frame containing the ids, strata, and allelic data as one column per locus. 
+*	Haploid DNA sequences
+*	A ploidy integer representing the ploidy of the data. 
+*	A data frame with stratification schemes in each column. Sample names are in the row names and must match the first part of the sample names (row names) of the 'loci' slot. Each column is a factor. 
+*	A Description or label for the object. 
+*	Optional related data 
+
+```{r}
+Msat.g <- df2gtypes(Msat.Cm.geno.a, ploidy = 2, id.col=3, loc.col=4,schemes = strata.schemes) 
+```
+If you have multiple stratification schemes, you need to specify which column of your strata schemes data frame you want to stratify by use this code:
+```{r} 
+Msat.g <- stratify(Msat.g, "Broad")
+```
+
+## Remove duplicates
+
+Now that we have a gtype object we want to remove duplicate genotypes. Genotypes are often duplicated to assess genotyping error rates but it is important to make sure to remove them before analyzing data for genetic structure, as including individuals more than once can cause spurious results.
+
+Identify samples with your specified percent of shared single-locus genotypes.
+```{r}
+dupGenotypes(Msat.g, num.shared = 0.66)
+```
+You can review these results and decide which samples to remove.
+
+## Loci QA/QC tests
+
+We want to ensure that our genetic markers both worked well in our samples and that they have enough diversity to be informative.
+To assess how well markers worked in our samples we want to look at:
+1.	the success rate of genotyping (number genotypes for a locus/ number of samples) for each locus. 
+2.	The diversity of alleles in a locus
+
+Generally it's not advisable to include markers that had low genotyping success rates in your analysis. Using markers with high proportions of missing data may make populations look more structured than they really are or cause other spurious results.
+
+To assess how useful markers are, we can look at the number of alleles the population (or specific strata) has at a locus. We can also look at a related value, allelic richness. Loci with very few alleles and low allelic richness will not be useful to assess structure between strata because most individuals in the population will have one of few possible allele combinations. We can also look at proportion of unique alleles (alleles present in only one individual in a strata) as a measure of genetic diversity at a locus. Unique alleles may be useful for assigning individuals to populations.
+
+We should also look at both expected and observed heterozygosity. Heterozygosity is another measure of genetic diversity in a locus. Markers with low heterozygosity may not have amplified well, may have null alleles, or may just have low genetic diversity and therefore will not be very useful in analyzing population structure. In a later step we will compare observed and expected heterozygosity.
+
+
+This code gives you a quick summary of many of the statistics we will calculate below. You can use it before or after you run the above steps as a quick check first look or double check.
+```{r}
+#summary(Msat.g) 
+```
+
+Generate the number of genotypes (sample size), proportion genotyped (success rate of genotyping), number of alleles, allelic richness, proportion of unique alleles, and expected and observed heterozygosity at each marker.
+
+```{r}
+qaqc(Msat.g, label = "Cm_QC_results", num.shared = 0.9) 
+```
+
+These initial results should help you decide which markers to keep in downstream analysis. You want markers with a high proportion genotyped, high allelic richness, and high heterozygosity.
+
+## Calculating Allele frequencies
+
+In addition to the values calculated with the ```qaqc``` command, you can calculate allele frequencies if you are interested. Allele frequencies can tell you about the evenness of genetic variation in each locus. The distribution of allele frequencies at your loci can inform you about demographic factors such as population size, and is used to caluclate many summary statistics. Allele frequencies are used to calculate heterozygosity, calculate the power of your markers to identify individuals, determine paternity, assign individuals to a population, etc.
+
+a) Generate allele frequencies for each locus. Each element is a matrix or array with frequencies by count (freq) and proportion (prop) of each allele.
+```{r}
+AF<-alleleFreqs(Msat.g, by.strata = FALSE)
+print(AF[1])
+```
+```{r echo=FALSE}
+library(knitr)
+kable(AF[1])
+```
+To save a file for each locus:
+```{r}
+#for(loc in names(AF)) {
+  #fname <- paste(Description, loc, "overall_allele.freqs.csv", sep = "_")
+  #write.csv(AF[[loc]], file = fname)
+#}
+```
+b) Generate allele frequencies for each locus separated by strata. Each element is a matrix or array with frequencies by count (freq) and proportion (prop) of each allele.
+```{r}
+af <- alleleFreqs(Msat.g, by.strata=T)
+print(af[1])
+```
+To save a file for each locus:
+```{r}
+#for(loc in names(af)) {
+  #fname <- paste(Description, loc, "bystrata_allele.freqs.csv", sep = "_")
+  #write.csv(af[[loc]][, "freq", ], file = fname)
+#}
+```
+
+##Private alleles
+
+Private alleles are alleles only found in one population/strata. Markers with many private alleles may be useful in some analyses (such as population assignment), but may be problematic for others (e.g., markers with many private alleles, or where different strata share very few alleles, may not be useful for calculating genetic distances). Thus, it may be important to identify the number of private alleles and then interpret and make decisions based on the context and goals of your study. 
+
+Generate a table with the number of private alleles per locus in each stratum:
+```{r}
+pA<-privateAlleles(Msat.g) 
+#View(pA)
+```
+```{r echo=FALSE}
+kable(pA[,c(2,7,9)])
+```
+## Linkage Disequilibrium
+Linkage disequilibrium (LD) occurs when loci are not randomly assorted. This can be due to physical proximity on the chromosome or an artifact of selection. Markers that are linked should generally not be considered as independent when examining genetic structure because they may artificially inflate structure signals. 
+Importantly it is best to examine linkage disequilibrium within each strata, as genetic structure can inflate LD when considered across populations. If markers are linked in many of your strata you should pick only one of each pair of linked markers to use for population structure analyses or combine markers (e.g., PHASE for SNPs), so as not to overestimate genetic structure. If your populations have significant genetic structure, testing for LD in all populations combined may reveal artificially indicate LD as a product of selection, drift, nonrandom mating, etc. It's good to check for LD in each of the individual populations. Markers that are linked in many populations should be excluded.
+
+Generate initial LD estimates for entire dataset and write results to file:
+```{r}
+LD<-LDgenepop(Msat.g)
+write.csv(LD, file = paste(Description, "_all_LD.csv", sep = ""))
+```
+
+Generate initial LD estimates within each strata and write results to file:
+```{r}
+x <- strataSplit(Msat.g)
+
+for(g in strataSplit(Msat.g)) {
+  LD <- LDgenepop(g)
+  fname <- paste(Description,"_LD_", strataNames(g)[1], ".csv", sep = "")
+  write.csv(LD, fname)
+  }
+```
+
+## Hardy-Weinberg equilibrium
+The Hardy-Weinberg theorem states that allele frequencies should be constant over time in the absence of selection, drift, migration or other processes that shift allele frequencies. This principle allows us to calculate expected levels of heterozygosity from measured allele frequencies. Populations that are not experiencing selection, drift, migration, nonrandom mating, or mutation should have observed heterozygosities similar to expected values, and are said to be in Hardy-Weinberg equilibrium (HWE). 
+Loci may be out of HWE for multiple reasons, but generally should not be used to measure gene flow/genetic structure and as they do not meet the assumptions required for informative neutral markers (N.B., especially for SNPs, this does not apply to study questions may involving adaptive variation vs. genetic draft/gene flow). If your populations have significant genetic structure an HWE test for all populations combined may reveal some deviation from HWE (indicating selection, drift, nonrandom mating, etc.) Therefore it is good to check for deviation from HWE in each of the individual populations. Markers that are out of HWE in many populations should be excluded, depending on the questions and data set.
+The following code will use a Monte Carlo procedure (random re-sampling from your data) to test for deviations from HWE for each locus. B indicates number of replicates for monte carlo simulation. If you don't have gene pop installed you can set ```use.genepop = FALSE```. The output will be a p-value for each marker.
+
+To test for HWE in all strata combined:
+```{r}
+HWE<-hweTest(Msat.g, use.genepop = TRUE, B= 1000, label = "HWE.genepop")#note 
+#write.csv(HWE, file = "Cm_msats_all_HWE.csv")
+```
+```{r echo=FALSE}
+df2 <- as.data.frame(HWE)
+kable(df2)
+```
+P values less that 0.05 indicate that a marker is out of HWE. We can see that when we test for HWE in the combined population many of our markers are out of HWE. Before removing them all we should test for HWE individually in each strata. 
+
+To test for HWE in each strata individually
+```{r}
+x <- strataSplit(Msat.g)
+for(g in strataSplit(Msat.g)) {
+ hwe <- hweTest(g, use.genepop = T)
+  na <- numAlleles(g)
+  result <- cbind(num.alleles = na, hwe)
+  write.csv(result, file =paste(strataNames(g)[1], ".csv"))
+ }
+```
+ADD IN TABLE FOR ONE STRATA
+
+When we test our strata separately most of our markers are in HWE(p > 0.05).
+
+## Jackknife
+
+Jackknife analysis calculates Hardy-Weinberg equilibriums for your population excluding each sample. This analysis identifies individuals who influence HWE.
+
+This is a computationally intense step because it calculates HWE n-1 times. It can therefore take a long time to run, especially if you have a large dataset.
+
+Perform HWE jackknife analysis
+```{r}
+#Msat.Cm.JackHWE<-jackHWE(Msat.g, exclude.num = 1, min.hwe.samples = 3, show.progress = TRUE, use.genepop = F)
+```
+
+This code uses jackknife analysis to identify influential samples. Samples are influential if HWE p values are less than alpha when you exclude them from you HWE calculation, but HWE p values are greater than alpha when you do include these samples in your HWE calculations.
+```{r}
+#Msat.Cm.JackHWE.influential<-jackInfluential(Msat.Cm.JackHWE, alpha = 0.05)
+#Msat.Cm.JackHWE.influential 
+```
+Write results of jackknife analysis to file
+```{r}
+#write.csv(Msat.Cm.JackHWE.influential$influential, file = paste(Description, "_JackHWE.influential.csv", sep = ""))
+#write.csv(Msat.Cm.JackHWE.influential$allele.freqs, file = paste(Description, "_JackHWE.allele.freqs.csv", sep = ""))
+#write.csv(Msat.Cm.JackHWE.influential$odds.ratio, file = paste(Description, "_JackHWE.odds.ratio.csv", sep = ""))
+```
+Create a cumulative frequency plot of all odds-ratios from jack.influential where a vertical dashed line marks the smallest influential exclusion. 
+```{r}
+#pdf(paste(Description, "_JackHWE.influential", ".pdf", sep = ""), width = 15, height = 8)
+#plot(Msat.Cm.JackHWE.influential, main = "Msat.Cm.JackHWE.influential")
+#dev.off()
+```
+![cumulative frequency plot of all odds-ratios from jack.influential](/C:/Users/shrey/Box/MEC_LAB_DOCS/MEC bioinformatics/StrataG/jackknifeplot.png)
+The above plot shows how many of the calculations of HWE (each calculation missing a different sample) yieled which odds ratio (#of permutations in  HWE/ # permutations The above plot shows how many of the calculations of HWE (each calculation missing a different sample) yielded which odds ratio (#of permutations in HWE/ # permutations out of HWE). From this plot it seems that most of our samples do not affect whether our loci are in HWE. If your plot shows that the majority of you premutation resulted in low odds ratios you should go back to HWE analysis of your markers to identify a marker that may be out of equilibrium.
+
+### You should continue running QA/QC until you decide your data is satisfactory. Once you are confident in your samples and markers you can move on to analysis. 
+
+# Data Analysis: Population Structure
+
+There are many analyses you can perform with genotype data. Fall into two broad categories. 
+1)	You can define groups a priori and look at some measure of genetic distance between them (e.g., Fst) 
+2)	You can also use relative genetic distances between individuals to determine genetically distinct groups and assign individuals to groups (e.g., STRUCTURE analysis)
+
+Here we explore a couple basic methods to measure levels of genetic structure, or genetic variation between strata. Measures of genetic distance can be used to determine distinct population segments, assess connectivity between groups, determine how long populations have been reproductively isolated, etc. There are many of genetic distances, each of which has strengths and weaknesses. It is important to think about which measure is best for answering your question, because as you will see, they can sometimes be different. Briefly, F statistics (Fst, Fis) measure the partitioning of genetic distance within and among groups. Gst is similar to Fst but adapted to multialellic loci. G'st accounts for bias from hypervariable loci, and G''st accounts for bias from sampling small populations. D measures the fraction of allelic variation among populations as an absolute rather than relatively. For additional background information, please see (eric archer paper-not sure which one you mean-please send).
+
+The following method outputs the overall level of genetic structure between your specified strata by the measures of genetic structure you specify with ```stats = "..."```. This function calculates overall genetic structure by calculating many permutation of pairwise comparisons between strata. You can specify the number of permutations with ```nrep = xxx```. Increasing the number of permutations you use will increase your statistical power, but will also make this more computationally intensive and slow. It is recommended to test code with 100 permutations, but use 10,000 permutations for actual analyses.
+ 
+```{r}
+overall.1 <- overallTest(Msat.g, stats = "all", nrep = 100, write.output=FALSE)
+#write.csv(overall.1$result, file = paste(Description, "_overall_test.csv", sep = ""))
+```
+
+The following code allows you to look at genetic distances between each possible pair of strata. As above, you can specify which measures of structure you want to use and how many permutations you want to use to calculate this.  Increasing the number of permutations you use will increase your statistical power, but will also make this more computationally intensive and slow. It is recommended to test code with 100 permutations, but use 10,000 permutations for actual analyses.
+```{r message=FALSE}
+pairwise.1 <- pairwiseTest(Msat.g, stats = c("fst"), nrep = 50, write.output=FALSE) 
+#write.csv(pairwise.1$result, file = paste(Description, "_pairwise_results.csv", sep = ""))
+```
+An example of the output
+```{r echo=FALSE}
+fstdf <- pairwise.1[1]
+fstdf <- as.data.frame(fstdf)[,c(1,6,7)]
+kable(fstdf)
+```
+You can save the Warning messages about dropped loci to check later if applicable
+```{r}
+#warnings() 
+```
+
+There is a lot more you can do with strataG. For example, you can also use strataG to run analyses through the program structure. For more information refer to the resources presented at the beginning of the guide.
+
+#StrataGUI
+
+Additionally, all of QAQC and initial population structure tests described above can be completed in a GUI format via the StrataG Shiny App. The GUI lets you avoid writing code directly, provides some useful data QC visualizations, and an output summary report. However, for those that are comfortable coding directly may wish to use R (and RStudio if desired), because the app can be very slow with large data sets, does not allow as much flexibility or clear documentation for reproducibility, and thus can be more difficult to troubleshoot, etc.. See StrtatGUI guide for details.
+
+```{r}
+#strataGUI()
+```
+
