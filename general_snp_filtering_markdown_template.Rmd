@@ -377,7 +377,7 @@ fix_tidy_4_final_merge <- fix_tidy_filt_final %>% dplyr::select(ChromKey, CHROM,
 gt_tidy_filt_final <- gt_tidy_filt2 %>% 
   anti_join(gt_tidy_hetero_remove, by = "Indiv") %>% 
   inner_join(fix_tidy_4_final_merge, by = c("ChromKey", "POS")) #%>% 
-  dplyr::select(ChromKey, CHROM, POS, Indiv, gt_AD, gt_DP, gt_HQ, gt_GL, gt_GQ, gt_GT, gt_GT_alleles, allele_A, allele_B, zygosity, REF, ALT)#LMK: When the LD_loci_to_keep line is commented out, this line gives an error that ChromKey isn't found; may need to be adjusted for ref based/no short LD filtering option
+  #dplyr::select(ChromKey, CHROM, POS, Indiv, gt_AD, gt_DP, gt_HQ, gt_GL, gt_GQ, gt_GT, gt_GT_alleles, allele_A, allele_B, zygosity, REF, ALT)#LMK: When the LD_loci_to_keep line is commented out, this line gives an error that ChromKey isn't found; may need to be adjusted for ref based/no short LD filtering option
   
 final_sumstats()
 ```
