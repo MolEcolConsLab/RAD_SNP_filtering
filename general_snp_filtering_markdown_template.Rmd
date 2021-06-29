@@ -50,21 +50,23 @@ source("scripts/VCFfilterstats.R")
 source("scripts/xtrafunctions.R")
 source("scripts/plotstats.R")
 source("scripts/filterSNPs.R")
+source("scripts/HDplot.R")
 
 options(dplyr.summarise.inform = FALSE) #Shut down notices for summarise (they're annoying)
 ```
 
-**This script is split into 10 steps:**
+**This script is split into 11 steps:**
 1) Import stats from vcftools for full dataset and visualize using a script from O'Leary et. al.
-2) Read in the vcf file from vcftools and organize it into a tidy dataframe
-3) Set parameters for filtering and target values for visualization
-4) Filter individuals and loci with lots of missing data
-5) Plot filtered data
-6) Evaluate HWE, heterozygosity and short-distance LD
-7) Filter for heterozygosity and neutral SNPs (ie HWE)
-8) Re-calculate and visualize data missingness
-9) Plot missingness metrics after filtering for HWE, heterozygosity, and, if using a denovo approach, LD
-10) Export data
+2) Read in VCF and visualize paralogs wth HDPlot
+3) Filter paralogs and convert vcf to tidy (long) format
+4) Set parameters for filtering and target values for visualization
+5) Filter individuals and loci with lots of missing data
+6) Plot filtered data
+7) Evaluate HWE, heterozygosity and short-distance LD
+8) Filter for heterozygosity and neutral SNPs (ie HWE)
+9) Re-calculate missingness and heterozygosity after filtering
+10) Plot missingness metrics after filtering for HWE, heterozygosity, and, if using a denovo approach, LD
+11) Export data
 
 **How to navigate this document:**
 The steps summarized above are split into chunks. An accompanying Gist document with example graphs and explanation is linked in the Github repository. A summary of what each chunk does, as well as any required input files, are just above each chunk and reiterated in that document. Most of the time, the required input files will just be the output of the previous chunks. Any parameters required in a chunk will be specified at the top.
@@ -127,62 +129,97 @@ loc_stats_raw <- read.loc.stats(dir = file_directory, vcf = file_prefix) #Requir
 plot_stats_init(ind_stats_raw, loc_stats_raw)
 ```
 
-Data set contains `r nrow(ind_stats_raw)` individuals and `r nrow(loc_stats_raw)` loci. #LMK_comment: is this supposed to be here? or is it supposed to be in quotes to print in the chunk?
 
 
+## Chunk 2: Read in VCF and visualize paralogs
 
+This chunk uses the program vcfR to read the population map and vcf file into R and "tidy" the dataframe (i.e. convert it to long format), which allows us to easily visualize and filter the data. The first step is to identify putative paralogs that have been collapsed together following the method outlined by McKinnery et. al. (2017) here: https://onlinelibrary.wiley.com/doi/abs/10.1111/1755-0998.12613.
 
-## Chunk 2: Read in VCF and create tidy dataframes
+Once we've visualized our data in terms of heterozygosity (H) and read ratio deviation (D), we will set limits for each parameter and filter likely paralogs as we convert our vcf file into a tidy format for downstream filtering. 
 
-This chunk uses the program vcfR to read the population map^ and vcf file into R and "tidy" the dataframe (i.e. convert it to long format), which allows us to easily visualize and filter the data. The meta, fixed, and genotype regions of the vcf file are converted into separate components of a list, but we will just be working with the dataframes corresponding to the fixed and genotype components. The fixed dataframe is used for filtering loci, and the genotype dataframe is used for filtering samples. In the end, we will use the fixed dataframe to filter loci from the genotype dataframe, and the final genotype dataframe will be exported using radiator.
+The meta, fixed, and genotype regions of the vcf file are converted into separate components of a list, but we will just be working with the dataframes corresponding to the fixed and genotype components. The fixed dataframe is used for filtering loci, and the genotype dataframe is used for filtering samples. In the end, we will use the fixed dataframe to filter loci from the genotype dataframe, and the final genotype dataframe will be exported using radiator.
 
-^A population map file is a text file that has the metadata for your samples that you want to read in and link to the sample IDs in the vcf file. In many cases for general pop gen, this will be locations and/or season/year 
-
-**Note** this chunk will take a few minutes to run.
-
-**Required parameters:** None
 ```{r}
 popmap <- read_tsv(paste0(file_directory, popmap_file, ".txt"), col_names = FALSE) %>% rename(Indiv = X1, Pop = X2)
 
 raw_vcf <- vcfR::read.vcfR(paste0(file_directory,file_prefix,".recode.vcf")) #This takes a minute
 
-queryMETA(raw_vcf)
-queryMETA(raw_vcf, element = "DP") #Look at meta region. Can specify arguments that return more details
 
-info <- data.frame(getFIX(raw_vcf)) #Query the fixed region
+#identify putative paralogs and plot
+paralog_calcs <- HDplot(raw_vcf) %>%
+  arrange(D)
+
+#Create heterozygosity vs read ratio deviation plot
+paralog_calcs %>% ggplot()+geom_point(aes(x=H,y=D)) + 
+  scale_y_continuous(name = "D", breaks = seq(-20, 20, by = 2)) +
+  scale_x_continuous(name = "H", breaks = seq(0, 1, by = 0.05)) +
+  ggtitle("Heterozygosity (H) vs Read Ratio Deviation (D)")
+
+#Create heterozygosity vs read ratio plot, if wanted
+#paralog_calcs %>% ggplot() + geom_point(aes(x=H,y=ratio))
+```
+
+
+
+## Chunk 3: Filter paralogs and convert vcf to tidy (long) format
+The goal with HDPlot is to capture the dense cloud of points that looks like a finger jutting out from the left side of the graph.
+
+**Required parameters:** Set limits for H and D after visualizing plot results from above.
+```{r}
+#Set limits for H and D based on plot from above
+H_lim <- 0.65
+D_lim <- 4
+
+#Create dataframe of putative paralogs based on thresholds set above
+paralogs <- paralog_calcs %>% filter(H > H_lim & abs(D) < D_lim) %>% 
+  mutate(POS = as.integer(POS))
+
+print(paste0("Identified ", nrow(paralogs), "likely paralogs. These will be removed from the dataset."))
+
+##If interested in viewing or extracting specific pieces of information, use the below code.
+#queryMETA(raw_vcf)
+#queryMETA(raw_vcf, element = "DP") #Look at meta region. Can specify arguments that return more details
+
+#info <- data.frame(getFIX(raw_vcf)) #Query the fixed region
 #raw_vcf@gt[1:6, 1:4] #Look at gt portion of vcf file
 
 #Meanings of the fields in the gt portion of the vcf file output from Stacks and VCFTools, which is colon delimited in each cell.
-meta_meanings <- cbind(c("GT", "DP", "AD", "GQ", "GL"), c("Genotype", "Read depth", "Allelic depth", "Genotype quality", "Genotype likelihood")) 
+#meta_meanings <- cbind(c("GT", "DP", "AD", "GQ", "GL"), c("Genotype", "Read depth", "Allelic depth", "Genotype quality", "Genotype likelihood")) 
+
 
 #Convert vcf file to tibble
 options(tibble.print_max = Inf)
 raw_vcf_tidy <- vcfR2tidy(raw_vcf) #This takes awhile
 
+
 #Extract fixed and gt dataframes and subset for useful columns
-## ChromKey is a link between the fixed portion and the gt portion of the files
-fix_tidy <- raw_vcf_tidy$fix
+## ChromKey is a link between the fixed portion and the gt portion of the files. Need to merge the paralog df with the fixed df to grab the ChromKey column to filter paralogs at the next step.
+paralogs <- paralogs %>% inner_join(raw_vcf_tidy$fix, by = c("CHROM", "POS")) %>% 
+  dplyr::select(ChromKey, CHROM, POS)
 
+#Convert fixed element to tidy format and remove paralogs
+fix_tidy <- raw_vcf_tidy$fix %>% 
+  anti_join(paralogs, by = c("CHROM", "POS"))
+
+#Convert gt element to tidy format and remove paralogs 
 gt_tidy <- raw_vcf_tidy$gt %>%
-  left_join(popmap, by = "Indiv")
+  left_join(popmap, by = "Indiv") %>% 
+  anti_join(paralogs, by = c("ChromKey", "POS"))
 
+#Store meta region
 gt_meta <- raw_vcf_tidy$meta
 
 #After extracting the relevant dataframes, remove the original imported vcf files from the environment to save working memory (you can always re-run parts of this chunk if you want to work directly with those files)
 #raw_vcf <- NULL
-raw_vcf_tidy <- NULL
 ```
-Checked above with reference 05/24/2021
 
 
-
-## Chunk 3: Set parameters for filtering
-Use the graphs from above to aid in determining the thresholds you'd like to set for filtering, as well as the "targets" you'd like to set for visualization. 
+## Chunk 4: Set parameters for filtering and target values for visualization
 
 There are three steps to the next chunk:
-Step 1: decide the minimum depth below which a locus will be classified as "missing' and then visualize the amount of missing data per individual.
-Step 2: based on the plot in the plot window, decide on the degree of data missingness that constitutes calling an individual as "failed". These individuals will be filtered before running any additional calculations. **This is an important step especially for smaller datasets where a number of samples didn't sequence well, because they will count towards the percentage of the total and can result in good loci being thrown out. In our experience,there is often a very obvious break between samples and worked and those that failed to help set this threshold as appropriate for the data**
-Step 3: set additional thresholds for filtering individuals and loci based on data missingness values calculated *after* removing failed individuals and low depth loci.
+- Step 1: decide the minimum depth below which a locus will be classified as "missing' and then visualize the amount of missing data per individual.
+- Step 2: based on the plot in the plot window, decide on the degree of data missingness that constitutes calling an individual as "failed". These individuals will be filtered before running any additional calculations. **This is an important step especially for smaller datasets where a number of samples didn't sequence well, because they will count towards the percentage of the total and can result in good loci being thrown out. In our experience,there is often a very obvious break between samples and worked and those that failed to help set this threshold as appropriate for the data**
+- Step 3: set additional thresholds for filtering individuals and loci based on data missingness values calculated *after* removing failed individuals and low depth loci.
 
 **Regarding "targets"** ... Because filtering is mostly done using means across individuals and/or loci, setting a "target" allows us to visualize how well our mean-based filtering removed individual samples and/or loci. These "target" metrics will show up as a light blue line in downstream graphs, but are not used for anything else.
 
@@ -229,9 +266,9 @@ target_depth <- 20 #target depth per individual and per locus
 
 
 
-## Chunk 4: Identify and filter missing individuals and loci
+## Chunk 5: Filter individuals and loci with missing data
 
-Here, we use the parameters specified above to filter the dataset for missingness and read depth at two levels: individual and locus/SNP. We create separate dataframes for the individuals/SNPs we wish to keep and those we will remove.
+Here, we use the parameters specified above to filter the dataset for missingness and read depth at two levels: individual and SNP. We create separate dataframes for the individuals/SNPs we wish to keep and those we will remove.
 Then, we filter these SNPs/individuals from our main gt and fixed dataframes. 
 Finally, we calculate the number of SNPs per locus after filtering.
 
@@ -272,7 +309,7 @@ sumstats()
 
 
 
-## Chunk 5 Plot filtered data
+## Chunk 6: Plot filtered data
 
 The plots produced here correspond to missingness and depth at the individual and population level after instituting the above filters.
 
@@ -283,8 +320,6 @@ red line = threshold ie shouldn't be any above/below this point (depending on th
 
 **No required parameters for this chunk**
 ```{r}
-source("./scripts/plotstats.R")#LMK: FYI this is currently redundant to first chunk reading in all the scripts to source
-
 plot_ind_stats_filt(keep_indv, keep_loci, mean_read_depth_indv, mean_read_depth_loci)
 
 plot_pop_stats_filt(keep_indv, mean_read_depth_indv)
@@ -300,11 +335,11 @@ SNPs_per_locus %>%
 
 
 
-## Chunk 6: Evaluate heterozygosity and HWE
+## Chunk 7: Evaluate heterozygosity and HWE
 
 This chunk will calculate individual heterozygosity and produce a graph of individual level heterozygosity and a table showing how many SNPs conform (or don't) to hardy-weinberg equilibrium (HWE) based on the threshold we set for HWE_inquire at the top of the chunk.
 
-**The main purpose of this chunk** is to help us identify an appropriate threshold for heterozygosity to filter samples that are likely to be contaminated, and to help us refine our threshold for filtering loci based on concordance with hardy-weinberg. When the chunk is finished running, see the graph for plots of individual-level heterozygosity, and the console for the number of SNPs that conform/don't to HWE based on the user-defined threshold. If we don't have well-defined populations yet - ie if we are planning to use these data to identify putative subpopulations - then it's wise to set the threshold to a very low e.g. .000001 value. *Also reminder: filtering by HWE is appropriate for analyses that should be run using putatively neutral loci. But this should be omitted/adjusted for other analyses aiming for loci under selection, etc.*
+**The main purpose of this chunk** is to help us identify an appropriate threshold for heterozygosity to filter samples that are likely to be contaminated, and to help us refine our threshold for filtering loci based on concordance with hardy-weinberg. When the chunk is finished running, see the graph for plots of individual-level heterozygosity, and the console for the number of SNPs that conform/don't to HWE based on the user-defined threshold. If we don't have well-defined populations yet - ie if we are planning to use these data to identify putative subpopulations - then it's wise to set the threshold to a very low e.g. .000001 value. *Also reminder: filtering by HWE is appropriate for analyses that rely on putatively neutral loci; this step should be omitted/adjusted for other analyses aiming for loci under selection, etc.*
 
 
 See this site for more information about general filtering for HWE: https://thierrygosselin.github.io/radiator/reference/filter_hwe.html
@@ -313,7 +348,6 @@ See this site for more information about general filtering for HWE: https://thie
 
 **Required parameters:** threshold for evaluating how many SNPs are in/out of HWE.
 ```{r}
-source("./scripts/filterSNPs.R")#LMK: FYI this is currently redundant to first chunk reading in all the scripts to source
 HWE_inquire <- 0.000001
 
 Obs_het_indv <- calc_het(gt_tidy_filt2) #Checked 05/23/2021
@@ -336,9 +370,9 @@ locus_HWE <- calc_hwe(gt_tidy_filt2) #Checked 05/23/2021
 
 
 
-## Chunk 7: Filter for heterozygosity and HWE
+## Chunk 8: Filter for heterozygosity and putatively neutral SNPs (ie HWE)
 
-This chunk will filter our dataset for individual samples with high levels of heterozygosity and for individual loci that don't conform to HWE based on the thresholds we set at the top of the chunk. It will also filter for short-distance LD by randomly selecting one SNP per locus *after* the filter for HWE and heterozygosity.
+This chunk will filter our dataset for individual samples with high levels of heterozygosity and for individual loci that don't conform to HWE based on the thresholds we set at the top of the chunk. It will also filter for short-distance LD by randomly selecting one SNP per locus *after* the filter for HWE and heterozygosity. **If data were generated using a reference-based approach, then do not use the LD filter (comment out line 402).**
 
 
 **Required parameters:** filtering threshold for heterozygosity and HWE.
@@ -384,7 +418,7 @@ final_sumstats()
 
 
 
-## Chunk 8: Re-calculate missingness and heterozygosity after above filtering
+## Chunk 9: Re-calculate missingness and heterozygosity after filtering
 
 This chunk will calculate missingness and heterozygosity for the remaining dataset after filtering in the previous chunks. These calculations will be visualized in the following chunks.
 
@@ -428,16 +462,13 @@ final_obs_het_indv <- gt_tidy_filt_final %>%
 
 
 
-## Chunk 9: Plot final data
-Plot missingness and read depth for the final dataset at the individual and population level.
+## Chunk 10: Make final plots after filtering for HWE, heterozygosity, and, if using a denovo approach, LD
 
 Again, dark blue line = mean
 light blue line = target
 red line = threshold ie shouldn't be any above this point
 **No required parameters for this chunk**
 ```{r}
-source("./scripts/plotstats.R")#LMK: FYI this is currently redundant to first chunk reading in all the scripts to source
-
 #Plot final individual stats
 plot_final_indv(final_indv_stats, final_loc_stats, final_mean_depth_indv, final_mean_depth_loc)
 
@@ -455,7 +486,7 @@ plot_final_het_denovo(final_SNPs_per_locus, final_obs_het_indv)
 
 
 
-## Chunk 10: Export data using radiator
+## Chunk 11: Export data using radiator
 
 Radiator exports data to a variety of formats from a tidy dataframe. To take advantage of this, we need to reformat our final tidy dataframe to emulate radiator's expectations. Then, we call on radiator for export. 
 
@@ -524,7 +555,7 @@ genind <- radiator::write_genind(radiator_temp, write = TRUE) #radiator -- WORKS
 
 #export to genlight using vcfR 
 #have to read in vcf file exported above to vcfR object, then use vcfR to export. The file stays within R
-vcf_int <- vcfR::read.vcfR("radiator_ref_filtered_vcf_05.24.2021.vcf") #LMK I changed what I think was a holdover typo here (it was vcf_int <- vcfR::read.vcfR("radiator_CNR_filtered_vcf_05.24.2021.vcf"), JDS can you confirm this is correct?
+vcf_int <- vcfR::read.vcfR("radiator_ref_filtered_vcf_05.24.2021.vcf")
 genlight <- vcfR2genlight(vcf_int) #vcfR
 
 #Remove intermediate vcf file from environment
@@ -538,208 +569,4 @@ genepop <- radiator::write_genepop(radiator_temp, filename = "CNR_filtered_genep
 
 #gtypes for strataG
 gtypes <- radiator::write_gtypes(radiator_temp, write = TRUE) #radiator -- WORKS
-```
-
-#LMK: John should we remove the code below this point from the template, or are there valuable things in here that we'll want to update and add in over time?
-
-
-
-
-## Format data for simulations and relationship inference with CKMRSim
-```{r}
-library(CKMRsim)
-input_vcf <- ("radiator_CNR_filtered_vcf_minallele_0.05.vcf")
-
-#Import final filtered dataframe of genotypes
-final_filtered_df <- read_csv2("radiator_filtered_tibble_minallele_freq_0.05.csv") 
-
-test_vcf <- vcfR::read.vcfR("CNR_filtered_vcf.vcf")
-
-test_vcf_tidy <- vcfR2tidy(test_vcf)
-
-test_gt_tidy <- test_vcf_tidy$gt %>% mutate(allele_A = ifelse(gt_GT == "0/0", 2, ifelse(gt_GT == "0/1", 1, 0)), allele_B = ifelse(gt_GT == "0/0", 0, ifelse(gt_GT == "0/1", 1, 2)))
-
-#Reformat columns and convert to long format
-long_genos_test <- test_gt_tidy %>%
-  mutate(gene_copy1 = ifelse(allele_A == 1 | allele_A == 2, "1", "2"),
-                             gene_copy2 = ifelse(allele_B == 1 | allele_B == 2, "2", "1")) %>% 
-  pivot_longer(cols = starts_with("gene_copy"),
-                               names_to = "gene_copy",
-                               values_to = "Allele"
-                               ) %>% 
-         mutate(Locus = paste0(ChromKey, "_", POS),
-                gene_copy = ifelse(gene_copy == "gene_copy1", "1", "2")) %>%
-  select(Indiv, Locus, gene_copy, Allele)
-
-head(long_genos_test)
-
-#Save distinct loci as vector for indexing
-loci <- long_genos_test %>% distinct(Locus)
-loci <- loci$Locus #Above saves as a one column tibble, so we convert to a vector
-
-#Compute allele frequencies
-allele_freqs <- long_genos_test %>%
-  count(Locus, Allele) %>%
-  group_by(Locus) %>%
-  mutate(Freq = n / sum(n),
-         Chrom = "Unk",
-         Pos = as.integer(factor(Locus, levels = loci))) %>%
-  ungroup() %>%
-  select(Chrom, Pos, Locus, Allele, Freq) %>%
-  arrange(Pos, desc(Freq)) %>%
-  mutate(AlleIdx = NA,
-         LocIdx = NA) %>%
-  filter(!is.na(Allele))
-
-head(allele_freqs)
-
-#Prepare allele frequency dataframe for CKMRSim
-afreqs_ready <- reindex_markers(allele_freqs)
-
-head(afreqs_ready)
-```
-
-
-
-Scratch scripts (removed from above)
-```{r}
-
-####-----Reference to understand data format of radiator-----####
-#Below function works randomly. If it hits an issue saying GDS node $ref does not exist, just keep trying
-#This code is mostly just to show the format used by radiator for export so I can emulate it with the code above.
-# tidy.vcf <- tidy_vcf(data = "09_vcftools_out/CNR_vcf_subset.vcf", parallel.core = 1, vcf.metadata = FALSE)
-# 
-# head(tidy.vcf)
-# #Convert genotypes to different formats
-# 
-# tidy.vcf2 <- tidy.vcf %>% mutate(GT = ifelse(GT_BIN == 0, "001001", 
-#                                              ifelse(GT_BIN == 1, "001002", "002002"))) %>% 
-#   mutate(GT_VCF = ifelse(GT_BIN == 0, "0/0", 
-#                          ifelse(GT_BIN == 1, "0/1", "1/1")))
-# 
-# head(tidy.vcf2)
-
-
-
-# num_indivs <- gt_tidy_filt1 %>% distinct(Indiv) %>% 
-#   summarize(n())
-# 
-# num_indivs <- as.numeric(num_indivs)
-
-
-
-
-  
-  
-# obs_allele_freq <- gt_tidy_filt_int %>% group_by(ChromKey, POS) %>% 
-#   summarize(p_count = sum(allele_A, na.rm = TRUE),
-#             q_count = sum(allele_B, na.rm = TRUE)) %>% 
-#   mutate(total_count = p_count + q_count) %>% 
-#   mutate(p_freq = p_count/total_count, q_freq = q_count/total_count) %>% 
-#   mutate(ChromPos = paste0(ChromKey, "_", POS)) %>% 
-#   column_to_rownames(var = "ChromPos")
-#   
-# 
-# exp_allele_freq <- obs_allele_freq %>% 
-#   mutate(AA = p_freq^2, Aa = 2*p_freq*q_freq, aa = q_freq^2) %>% 
-#   mutate(ChromPos = paste0(ChromKey, "_", POS)) %>% 
-#   column_to_rownames(var = "ChromPos") %>% 
-#   select(AA, Aa, aa)
-# 
-# #Check that all rows sum to 1 - no rows should be returned
-# exp_allele_freq %>%
-#   mutate(total_freq = rowSums(., na.rm = TRUE)) %>% 
-#   filter(total_freq > 1.00000001 | total_freq < .999999999) #Rounding error can make some of the values just slightly less or greater than 1, so we word it like this.
-# 
-# exp_allele_count <- exp_allele_freq %>% 
-#   rownames_to_column(var = "ChromPos") %>% 
-#   mutate(exp_AA_count = AA*num_indivs, 
-#          exp_Aa_count = Aa*num_indivs,
-#          exp_aa_count = aa*num_indivs) %>% 
-#   column_to_rownames(var = "ChromPos") %>% 
-#   dplyr::select(exp_AA_count, exp_Aa_count, exp_aa_count)
-# 
-# 
-# 
-# 
-# head(obs_allele_count)
-# 
-# test1 <- as.numeric(exp_allele_count[1,])
-# test2 <- as.numeric(obs_allele_count[1,])
-# test3 <- as.numeric(exp_allele_freq[1,])
-# 
-# chi <- chisq.test(x = test2, p = test3)
-
-# HWE <- read_tsv("09_vcftools_out/CNR_raw.hwe", col_names = TRUE)
-# HWE_sig <- HWE %>% filter(P_HWE < 0.05) %>% rename(CHROM = CHR) %>% 
-#   mutate(CHROM = as.character(CHROM))
-# 
-# #fix_tidy_filt contains the remaining loci after we subject it to different levels of filtering
-# fix_tidy_filt_final <- fix_tidy_filt1 %>% anti_join(HWE_sig, by = c("CHROM", "POS"))
-
-```
-
-
-
-
-### Scratch code
-Larson et. al. (2021) got different results when removing loci with a - value of Fis in one of the populations. If we decide to do that for any reason, the below code should help.
-```{r, evaluate = FALSE}
-
-#We'll export our final dataset to vcf format using vcfR because it preserves more data. We can use radiator to export to other formats.
-
-#Filter input vcf for individuals and loci
-final_gt <- NULL
-final_gt$FORMAT <- raw_vcf@gt[,1]
-final_gt <- raw_vcf@gt[,colnames(raw_vcf@gt) %in% keep_indv$Indiv]
-
-
-fix_tidy_filt_final <- fix_tidy_filt_final %>% mutate(across(where(is.integer), as.character))
-final_fix <- as.matrix(fix_tidy_filt_final)
-final_fix <- final_fix[,-1]
-
-vcf_export <- raw_vcf
-vcf_export@gt <- final_gt
-vcf_export@fix <- final_fix
-vcf_export@meta
-
-vcfR::write.vcf(vcf_export, file = "vcfR_CNR_filtered_vcf_minallele_0.05.vcf")
-
-
-
-Total_locus_F <- Obs_het_total %>% inner_join(SNPs, by = c("ChromKey", "POS")) %>%
-  mutate(locus_Fit = (Exp_het_total - Obs_het_total)/Exp_het_total)
-
-
-#Subset dataframes for SNPs and expected heterozygosity by population
-#Expected heterozygosity for each locus within each population
-Exp_het_by_pop <- Allele_count_by_pop %>% inner_join(SNPs, by = c("ChromKey", "POS")) %>% 
-  select(Pop, ChromKey, POS, Exp_het_pop) 
-
-#Observed heterozygosity for each locus within each population
-Obs_het_by_pop <-  gt_tidy_filt_int %>% inner_join(Exp_het_by_pop, by = c("ChromKey", "POS", "Pop")) %>% 
-  select(ChromKey, POS, Indiv, Pop, zygosity, Exp_het_pop) %>% 
-  group_by(Pop, ChromKey, POS) %>% 
-  summarize(Obs_het_pop = sum(zygosity == "heterozygous", na.rm = TRUE)/n())
-
-#Population level F value for each locus
-Population_locus_F <- Obs_het_by_pop %>% inner_join(Exp_het_by_pop, by = c("Pop", "ChromKey", "POS")) %>% 
-  mutate(locus_Fis = (Exp_het_pop - Obs_het_pop)/Exp_het_pop)
-
-
-#Total observed heterozygosity for each locus
-Obs_het_total <- gt_tidy_filt_int %>% inner_join(SNPs, by = c("ChromKey", "POS")) %>% 
-  select(ChromKey, POS, zygosity, Exp_het_total) %>% 
-  group_by(ChromKey, POS) %>% 
-  summarize(Obs_het_total = sum(zygosity == "heterozygous", na.rm = TRUE)/n())
-
-# #Calculate F on a per-individual level to find outliers i.e. individuals with particularly high levels of heterozygosity
-# #Calculates both Fis and Fit
-# gt_tidy_hetero <- gt_tidy_filt_int %>% inner_join(SNPs, by = c("ChromKey", "POS")) %>% 
-#   group_by(Indiv) %>% 
-#   summarize(Obs_het_ind = sum(zygosity == "heterozygous", na.rm = TRUE)/n()) %>%  separate(col = Indiv, into = "Pop", remove = FALSE, sep = 2) %>% 
-#   left_join(Allele_count_by_pop, by = c("Pop", "ChromKey", "POS")) %>%
-#   mutate(Fis = (Exp_het_pop - Obs_het_ind)/Exp_het_pop) %>% 
-#   mutate(Fit = (H_total - Obs_het_ind)/H_total) %>% 
-#   select(Indiv, Pop, Obs_het_ind, Exp_het_pop, Fis, Fit)
 ```
