@@ -137,8 +137,6 @@ This chunk uses the program vcfR to read the population map and vcf file into R 
 
 Once we've visualized our data in terms of heterozygosity (H) and read ratio deviation (D), we will set limits for each parameter and filter likely paralogs as we convert our vcf file into a tidy format for downstream filtering. 
 
-The meta, fixed, and genotype regions of the vcf file are converted into separate components of a list, but we will just be working with the dataframes corresponding to the fixed and genotype components. The fixed dataframe is used for filtering loci, and the genotype dataframe is used for filtering samples. In the end, we will use the fixed dataframe to filter loci from the genotype dataframe, and the final genotype dataframe will be exported using radiator.
-
 ```{r}
 popmap <- read_tsv(paste0(file_directory, popmap_file, ".txt"), col_names = FALSE) %>% rename(Indiv = X1, Pop = X2)
 
@@ -162,7 +160,9 @@ paralog_calcs %>% ggplot()+geom_point(aes(x=H,y=D)) +
 
 
 ## Chunk 3: Filter paralogs and convert vcf to tidy (long) format
-The goal with HDPlot is to capture the dense cloud of points that looks like a finger jutting out from the left side of the graph.
+The goal with HDPlot is to capture the dense cloud of points that looks like a finger jutting out from the left side of the graph. Set the parameters H and D to try and capture the dense cloud of points as well as possible.
+
+Once likely paralogs have been identified, we will convert the vcf file into tidy format and simultaneously filter the SNPs HDplot identified as putative paralogs. The meta, fixed, and genotype regions of the vcf file are converted into separate components of a list, but we will just be working with the dataframes corresponding to the fixed and genotype components. The fixed dataframe is used for filtering loci, and the genotype dataframe is used for filtering samples. In the end, we will use the fixed dataframe to filter loci from the genotype dataframe, and the final genotype dataframe will be exported using radiator.
 
 **Required parameters:** Set limits for H and D after visualizing plot results from above.
 ```{r}
@@ -486,7 +486,7 @@ plot_final_het_denovo(final_SNPs_per_locus, final_obs_het_indv)
 
 
 
-## Chunk 11: Export data using radiator
+## Chunk 11: Export data using radiator and vcfR
 
 Radiator exports data to a variety of formats from a tidy dataframe. To take advantage of this, we need to reformat our final tidy dataframe to emulate radiator's expectations. Then, we call on radiator for export. 
 
