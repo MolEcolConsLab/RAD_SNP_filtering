@@ -513,7 +513,19 @@ fix_tidy_filt1 <- NULL
 #Rename columns for popmap so it can be integrated into radiator
 popmap2 <- popmap %>% rename(INDIVIDUALS = Indiv, STRATA = Pop)
 
-#JDS note: Does this work for the reference-based approach? Or do we need to format differently?
+#DE NOVO -- NOTE: if using a reference based approach, may need to edit the CHROM column so that the values in that column are numeric rather than alpha-numeric. 
+#An example of how to do it is below
+
+# Example: If using a reference-based approach where the reference includes "QVIC" and ".1" as part of the value in the CHROM column, do this:
+# CHROM_num <- gt_tidy_filt_final %>% pull(CHROM) %>% 
+#   stringr::str_remove(pattern = "QVIC") %>% 
+#   stringr::str_remove(pattern = "\\.1")
+# 
+# gt_tidy_filt_final2 <- gt_tidy_filt_final %>% dplyr::select(-CHROM)
+# gt_tidy_filt_final2$CHROM <- as.numeric(CHROM_num)
+
+#Assuming the above is not applicable ... 
+
 #Re-format final filtered dataframe for export with radiator
 radiator_temp <- gt_tidy_filt_final %>% 
   rename(INDIVIDUALS = Indiv,
