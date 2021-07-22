@@ -524,6 +524,8 @@ popmap2 <- popmap %>% rename(INDIVIDUALS = Indiv, STRATA = Pop)
 # gt_tidy_filt_final2 <- gt_tidy_filt_final %>% dplyr::select(-CHROM)
 # gt_tidy_filt_final2$CHROM <- as.numeric(CHROM_num)
 
+##If having issues exporting after using a reference-based approach, feel free to reach out and we can brainstorm together: jswenson@umass.edu
+
 #Assuming the above is not applicable ... 
 
 #Re-format final filtered dataframe for export with radiator
