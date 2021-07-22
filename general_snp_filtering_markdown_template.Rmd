@@ -171,7 +171,7 @@ H_lim <- 0.65
 D_lim <- 4
 
 #Create dataframe of putative paralogs based on thresholds set above
-paralogs <- paralog_calcs %>% filter(H > H_lim & abs(D) < D_lim) %>% 
+paralogs <- paralog_calcs %>% filter(H > H_lim & abs(D) > D_lim) %>% 
   mutate(POS = as.integer(POS))
 
 print(paste0("Identified ", nrow(paralogs), "likely paralogs. These will be removed from the dataset."))
