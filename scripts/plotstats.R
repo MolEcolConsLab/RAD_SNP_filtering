@@ -146,7 +146,8 @@ plot_pop_stats_filt <- function(keep_indv, mean_read_depth_indv){
 
   #Set color scheme for graphs
 num_pops <- length(levels(factor(keep_indv$Pop)))
-pop_cols <- brewer.pal(n = num_pops, name = "Spectral")
+pop_cols <- glasbey.colors(num_pops) #If using > 11 populations
+#pop_cols <- brewer.pal(n = num_pops, name = "Spectral") #If using < 11 populations
 
 #Missing data by population
 p1.1_pop <- ggplot(keep_indv, aes(x = factor(Pop))) +
@@ -160,7 +161,8 @@ p1.1_pop <- ggplot(keep_indv, aes(x = factor(Pop))) +
                        ("darkblue", "lightblue", "red"),
                        labels = c("mean", "target", "threshold"),
                        guide = "legend") +
-  theme_standard
+  theme_standard + 
+  theme(axis.text.x = element_text(angle = 90))
 
 #Read coverage by population
 p1.2_pop <- ggplot(mean_read_depth_indv, aes(x = factor(Pop))) +
@@ -174,7 +176,8 @@ p1.2_pop <- ggplot(mean_read_depth_indv, aes(x = factor(Pop))) +
                        breaks = c("darkblue", "lightblue", "red"),
                        labels = c("mean", "target", "threshold"),
                        guide = "legend") +
-  theme_standard
+  theme_standard +
+  theme(axis.text.x = element_text(angle = 90))
 
 # Print population level graphs
 ggarrange(p1.1_pop, p1.2_pop, common.legend = TRUE)
@@ -255,8 +258,9 @@ ggarrange(p2.1, p2.2, p2.3, p2.4, common.legend = TRUE)
 plot_final_pop <- function(final_indv_stats, final_mean_depth_indv){
   #Determine color scheme for graph
   num_pops2 <- length(levels(factor(final_indv_stats$Pop)))
-  pop_cols2 <- brewer.pal(n = num_pops2, name = "Spectral")
-  
+#  pop_cols2 <- brewer.pal(n = num_pops2, name = "Spectral") #If using < 11 populations
+  pop_cols2 <- glasbey.colors(num_pops) #If using > 11 populations
+    
   #Missing data by population
   p2.1_pop <- ggplot(final_indv_stats, aes(x = factor(Pop))) +
     geom_boxplot(aes(y = percent_missing), fill = pop_cols2) + 
@@ -299,8 +303,10 @@ plot_final_het_denovo <- function(final_SNPs_per_locus, final_obs_het_indv){
     theme_standard
   
   #Vizualize heterozygosity
-  pop_cols2 <- brewer.pal(n = 5, name = "Dark2")
-  
+  num_pops3 <- length(levels(factor(final_obs_het_indv$Pop)))
+  #pop_cols3 <- brewer.pal(n = num_pops3, name = "Dark2") #If using < 11 populations
+  pop_cols3 <- glasbey.colors(num_pops) #If using > 11 populations
+    
   hetero2 <- ggplot(final_obs_het_indv, aes(x = factor(Pop), y = Obs_het, color = Pop)) + 
     geom_jitter() + 
     scale_color_manual(values = pop_cols2) + 
@@ -313,8 +319,10 @@ plot_final_het_denovo <- function(final_SNPs_per_locus, final_obs_het_indv){
 
 plot_final_het_reference <- function(final_obs_het_indv){
   #Vizualize heterozygosity
-  pop_cols2 <- brewer.pal(n = 5, name = "Dark2")
-  
+  num_pops3 <- length(levels(factor(final_obs_het_indv$Pop)))
+#  pop_cols3 <- brewer.pal(n = num_pops3, name = "Dark2")
+  pop_cols3 <- glasbey.colors(num_pops) #If using > 11 populations
+    
   ggplot(final_obs_het_indv, aes(x = factor(Pop), y = Obs_het, color = Pop)) + 
     geom_jitter() + 
     scale_color_manual(values = pop_cols2) + 

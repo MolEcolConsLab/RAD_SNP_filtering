@@ -38,6 +38,7 @@ library(vcfR)
 library(tidyverse)
 library(ggpubr)
 library(RColorBrewer)
+library(Polychrome)
 library(HardyWeinberg)
 library(strataG)
 library(radiator)
@@ -49,7 +50,7 @@ source("scripts/ggplot.R")
 source("scripts/VCFfilterstats.R")
 source("scripts/xtrafunctions.R")
 source("scripts/plotstats.R")
-source("scripts/filterSNPs.R")
+source("scripts/filterSNPs_UPDATED.R")
 source("scripts/HDplot.R")
 
 options(dplyr.summarise.inform = FALSE) #Shut down notices for summarise (they're annoying)
@@ -117,9 +118,9 @@ The dark blue line in each graph is the mean.
 ```{r stats raw, fig.height=20, fig.width=10, message=FALSE, warning=FALSE}
 #setwd("...") #(if desired, else comment out)
 # load stats files - O'Leary ----
-file_directory <- "./data/"
-file_prefix <- "CNR_raw"
-popmap_file <- "popmap_all"
+file_directory <- "../data/"
+file_prefix <- "CNR_POPs2"
+popmap_file <- "popmap_allCNR"
 
 #Load stats files for viz
 ind_stats_raw <- read.ind.stats(dir = file_directory, vcf = file_prefix) #Requires the output files from vcftools with the following extensions: .idepth, .imiss, .het
@@ -140,7 +141,7 @@ Once we've visualized our data in terms of heterozygosity (H) and read ratio dev
 ```{r}
 popmap <- read_tsv(paste0(file_directory, popmap_file, ".txt"), col_names = FALSE) %>% rename(Indiv = X1, Pop = X2)
 
-raw_vcf <- vcfR::read.vcfR(paste0(file_directory,file_prefix,".recode.vcf")) #This takes a minute
+raw_vcf <- vcfR::read.vcfR(paste0(file_directory,file_prefix,".vcf")) #This takes a minute
 
 
 #identify putative paralogs and plot
@@ -174,7 +175,7 @@ D_lim <- 4
 paralogs <- paralog_calcs %>% filter(H > H_lim & abs(D) > D_lim) %>% 
   mutate(POS = as.integer(POS))
 
-print(paste0("Identified ", nrow(paralogs), "likely paralogs. These will be removed from the dataset."))
+print(paste0("Identified ", nrow(paralogs), " likely paralogs. These will be removed from the dataset."))
 
 ##If interested in viewing or extracting specific pieces of information, use the below code.
 #queryMETA(raw_vcf)
@@ -210,7 +211,8 @@ gt_tidy <- raw_vcf_tidy$gt %>%
 gt_meta <- raw_vcf_tidy$meta
 
 #After extracting the relevant dataframes, remove the original imported vcf files from the environment to save working memory (you can always re-run parts of this chunk if you want to work directly with those files)
-#raw_vcf <- NULL
+raw_vcf <- NULL
+raw_vcf_tidy <- NULL
 ```
 
 
@@ -283,18 +285,20 @@ Finally, we calculate the number of SNPs per locus after filtering.
 #Remove failed individuals before filtering
 gt_tidy_fltr <- remove_failed(gt_tidy) #Checked 05/23/2021
 
-#calculate individual missingness and make dataframe of individuals to keep
-keep_indv <- calc_missing_indv(gt_tidy_fltr) #Checked 05/23/2021
+#Iteratively calculate locus missingness and make dataframe of loci to keep
+keep <- filter_all(gt_tidy_fltr, Imiss = Imiss, Lmiss = Lmiss, interval = 5) #loops over values of missingness from 100% to Imiss in intervals specified by the interval argument. Iterative filtering improves the number of individuals retained.
 
-#calculate locus missingness and make dataframe of loci to keep
-keep_loci <- calc_missing_loci(gt_tidy_fltr) #Checked 05/23/2021
+#Split output from above function into separate dataframes
+fix_tidy_filt1 <- keep[[1]]
+gt_tidy_filt1 <- keep[[2]]
+(keep_indv <- keep[[3]] %>% arrange(percent_missing)) #Should show 0 missing data
+keep_loci <- keep[[4]]
 
-#filter individuals and loci based on parameters set above
-gt_tidy_filt1 <- filter_indv(gt_tidy_fltr) #Checked 05/23/2021
-fix_tidy_filt1 <- filter_loci(gt_tidy_filt1) #Checked 05/23/2021
+#calculate individual and locus missingness, and how much we will remove if we filtered immediately without an iterative approach, just to compare. Will likely see fewer individuals and/or loci retained here than in the loop above.
+#miss.stats <- calc_missing(gt_tidy_fltr) 
 
 #filter gt dataframe so only good loci remain
-gt_tidy_filt2 <- merge_tables(gt_tidy_filt1) #Checked 05/23/2021
+gt_tidy_filt2 <- merge_tables(gt_tidy_filt1, fix_tidy_filt1) #Checked 05/23/2021
 
 #Calculate mean read depth per locus and individual
 mean_read_depth_indv <- calc_depth_indv(gt_tidy_filt2) #Checked 05/23/2021
