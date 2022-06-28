@@ -44,6 +44,7 @@ library(strataG)
 library(radiator)
 library(SeqArray)
 library(genetics)
+library(whoa)
 
 #Source custom functions (change paths accordingly if needed)
 source("scripts/ggplot.R")
@@ -154,11 +155,34 @@ paralog_calcs %>% ggplot()+geom_point(aes(x=H,y=D)) +
   scale_x_continuous(name = "H", breaks = seq(0, 1, by = 0.05)) +
   ggtitle("Heterozygosity (H) vs Read Ratio Deviation (D)")
 
+
 #Create heterozygosity vs read ratio plot, if wanted
 #paralog_calcs %>% ggplot() + geom_point(aes(x=H,y=ratio))
 ```
 
 
+##Chunk 3: Visualize genotype frequency and assess heterozygote miscall rate
+```{r}
+#Make genotype frequency scatter plot
+gfreqs <- exp_and_obs_geno_freqs(raw_vcf) #Calculate expected and observed genotype frequencies
+geno_freqs_scatter(gfreqs)
+
+#Infer heterozygote miscall rate
+het.miscall.all <- infer_m(raw_vcf, minBin = 1e15) #Set the minBin argument very high so it runs over all read depths
+
+het.miscall.all$m_posteriors #mean column shows percent heterozygote miscall rate
+
+#Infer miscall rate for different read depth bins
+#Can set the bin size to whatever we want; a good starting value is the number of total genotyped sites divided by 100 (see help for infer_m function for more info)
+b <- het.miscall$m_posteriors$total_n/100
+het.miscall.bins <- infer_m(raw_vcf, minBin = b)
+
+#Plot heterozygote miscall rate at different read depths to help with filtering.
+posteriors_plot(het.miscall.bins$m_posteriors)
+
+#Based on plot above, set the threshold for filtering loci with a mean depth < mean.depth.threshold
+mean.depth.threshold <- 20
+```
 
 ## Chunk 3: Filter paralogs and convert vcf to tidy (long) format
 The goal with HDPlot is to capture the dense cloud of points that looks like a finger jutting out from the left side of the graph. Set the parameters H and D to try and capture the dense cloud of points as well as possible.
@@ -287,7 +311,7 @@ gt_tidy_fltr <- remove_failed(gt_tidy) #Checked 05/23/2021
 
 #Iteratively calculate locus missingness and make dataframe of loci to keep
 #Set the "interval" argument to the percent 
-keep <- filter_all(gt_tidy_fltr, Imiss = Imiss, Lmiss = Lmiss, interval = 5) #loops over values of missingness from 100% to Imiss in intervals specified by the interval argument. Iterative filtering improves the number of individuals retained.
+keep <- filter_all(gt_tidy_fltr, Imiss = Imiss, Lmiss = Lmiss, interval = 5, mean.depth.threshold = mean.depth.threshold) #loops over values of missingness from 100% to Imiss in intervals specified by the interval argument. Iterative filtering improves the number of individuals retained.
 
 #Split output from above function into separate dataframes
 fix_tidy_filt1 <- keep[[1]]
@@ -305,8 +329,12 @@ gt_tidy_filt2 <- merge_tables(gt_tidy_filt1, fix_tidy_filt1) #Checked 05/23/2021
 mean_read_depth_indv <- calc_depth_indv(gt_tidy_filt2) #Checked 05/23/2021
 mean_read_depth_loci <- calc_depth_loci(gt_tidy_filt2) #Checked 05/23/2021
 
+#Re-calculate mean depth after removing low depth loci
+mean_read_depth_indv <- calc_depth_indv(gt_tidy_filt2) #Checked 05/23/2021
+mean_read_depth_loci <- calc_depth_loci(gt_tidy_filt2) #Checked 05/23/2021
+
 #Calculate number of SNPs per locus (reference-based)
-SNPs_per_locus <- fix_tidy_filt1 %>% count(ChromKey, name = "SNPs")
+SNPs_per_locus <- fix_tidy_filt2 %>% count(ChromKey, name = "SNPs")
 
 #Show summary of filtering info in console
 sumstats()
@@ -369,13 +397,13 @@ ggplot(Obs_het_indv, aes(x = factor(Pop), y = Obs_het, color = Pop)) +
   #ylab(expression(paste(F[IT]))) +
   theme_facet
 
-locus_HWE <- calc_hwe(gt_tidy_filt2) #Checked 05/23/2021
+locus_HWE <- calc_hwe(gt_tidy_filt2) #Checked 05/23/2021; add argument for by_pop
 ```
 
 
 
 
-## Chunk 8: Filter for heterozygosity and putatively neutral SNPs (ie HWE)
+## Chunk 8: Filter for heterozygosity, HWE (i.e. putatively neutral SNPs) and LD
 
 This chunk will filter our dataset for individual samples with high levels of heterozygosity and for individual loci that don't conform to HWE based on the thresholds we set at the top of the chunk. It will also filter for short-distance LD by randomly selecting one SNP per locus *after* the filter for HWE and heterozygosity. **If data were generated using a reference-based approach, then do not use the LD filter (comment out line 402).**
 

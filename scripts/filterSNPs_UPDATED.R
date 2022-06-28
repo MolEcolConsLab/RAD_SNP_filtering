@@ -69,7 +69,7 @@ keep_loci <- gt_tidy_fltr %>% anti_join(missing_loci, by = c("ChromKey", "POS"))
 #Create filtered genotype table keeping only loci and individuals that passed the above filters
 ##Also calculate allele frequency for each locus so we can remove sites that have no variation after filtering. Some sites may have been called as SNPs due to one or two minor alleles in individuals that have now been removed due to missing data.
 #Checked 05/06/2021
-filter_all <- function(gt_tidy_fltr, Imiss = Imiss, Lmiss = Lmiss, interval = 5){
+filter_all <- function(gt_tidy_fltr, Imiss = Imiss, Lmiss = Lmiss, interval = 5, mean.depth.threshold = mean.depth.threshold){
 
   #Make sequence of values to loop over for individual missingness
   indvLoopVec <- seq(from=100-interval, to=Imiss, by = -interval)
@@ -148,20 +148,39 @@ filter_all <- function(gt_tidy_fltr, Imiss = Imiss, Lmiss = Lmiss, interval = 5)
     filter(mean_depth > (mean_locus_depth + (2*locus_depth_sd)))
   
   #Create dataframe of loci to keep
-  keep_loci <- gt_tidy.temp %>% anti_join(missing_loci, by = c("ChromKey", "POS")) %>%
+  keep_loci.temp <- gt_tidy.temp %>% anti_join(missing_loci, by = c("ChromKey", "POS")) %>%
     anti_join(ridonkulous_coverage_loci, by = c("ChromKey", "POS")) %>%
     group_by(ChromKey, POS) %>%
     summarize(percent_missing = sum(is.na(gt_DP_recode))/n() * 100)
   
+  
   #Create final dataframe to export
-  gt_tidy_filt1 <- gt_tidy.temp %>% semi_join(keep_loci, by = c("ChromKey", "POS")) %>% #Keep only loci that passed filter thresholds
+  gt_tidy_filt.temp2 <- gt_tidy.temp %>% semi_join(keep_loci.temp, by = c("ChromKey", "POS")) %>% #Keep only loci that passed filter thresholds
     semi_join(keep_indv, by = "Indiv") %>% #Keep only individuals that passed the filter thresholds
     dplyr::select(!gt_DP) %>% 
     dplyr::rename(gt_DP = gt_DP_recode) %>% #Save gt_recode as gt_DP so defined depth threshold for missingness is perpetuated.
     mutate(allele_A = ifelse(gt_GT == "0/0", 2, ifelse(gt_GT == "0/1", 1, 0)), allele_B = ifelse(gt_GT == "0/0", 0, ifelse(gt_GT == "0/1", 1, 2))) %>%
     mutate(zygosity = ifelse(gt_GT == "0/1", "heterozygous", "homozygous")) #Calculate quantity of alleles because some loci have no variation after filtering individuals
   
-    #Remove SNPs that lost variation when missing individuals were removed
+  #Calcualte mean depth of loci to filter
+  mean_read_depth_loci.temp <- gt_tidy_filt.temp2 %>% group_by(ChromKey, POS) %>%
+    summarize(mean_depth = mean(gt_DP, na.rm = TRUE)) %>%
+    ungroup() %>%
+    arrange(desc(mean_depth))
+  
+  #Filter loci with low mean read depth that are prone to higher miscall rates
+  low_depth_loci <- mean_read_depth_loci.temp %>% dplyr::filter(mean_depth < mean.depth.threshold)
+  
+  
+  
+  gt_tidy_filt1 <- gt_tidy_filt.temp2 %>% anti_join(low_depth_loci, by = c("ChromKey", "POS"))
+  
+  
+  keep_loci <- gt_tidy_filt1 %>% anti_join(low_depth_loci, by = c("ChromKey", "POS")) %>%
+    group_by(ChromKey, POS) %>%
+    summarize(percent_missing = sum(is.na(gt_DP))/n() * 100)
+    
+  #Remove SNPs that lost variation when missing individuals were removed
     not_SNPs <- gt_tidy_filt1 %>% group_by(ChromKey, POS) %>%
       summarize(total_allele_A = sum(allele_A, na.rm = TRUE), total_allele_B = sum(allele_B, na.rm = TRUE)) %>%
       mutate(total_alleles = total_allele_A + total_allele_B) %>%
@@ -220,7 +239,7 @@ sumstats <- function(){
     filter(total_allele_A == 0 | total_allele_B == 0)
   #filter(total_allele_A <= minor_allele_indv | total_allele_B <= minor_allele_indv) #If wanting to filter out based on minor allele freq
   
-cat("After filtering, ", nrow(not_SNPs), " positions are newly invariant (not SNPs) and were filtered.\n Overall, kept ", nrow(keep_indv), " individuals and ", nrow(fix_tidy_filt1), " SNPs over ", nrow(SNPs_per_locus), " loci.\n (assuming a de novo approach to locus formation - the number of loci will be different for reference-based approaches).\n\nThe breakdown of remaining samples by population is:")
+cat("After filtering, ", nrow(not_SNPs), " positions are newly invariant (not SNPs) and were filtered.\n Overall, kept ", nrow(keep_indv), " individuals and ", nrow(fix_tidy_filt2), " SNPs over ", nrow(SNPs_per_locus), " loci.\n (assuming a de novo approach to locus formation - the number of loci will be different for reference-based approaches).\n\nThe breakdown of remaining samples by population is:")
 
   
   #Number of remaining individuals from each population
@@ -262,7 +281,10 @@ return(Obs_het_indv)
 
 #Calculate frequency of AA, Aa, and aa genotypes at each locus and format for HWE calculations (which only accepts a matrix of genotype frequencies)
 #Checked 05/06/2021
-calc_hwe <- function(gt_tidy_filt2){
+
+#Adding argument to potentially loop over populations. Need to keep working on this 06/28/2022
+calc_hwe <- function(gt_tidy_filt2, by_pop = F){
+  if(by_pop == F){
   obs_allele_count <- gt_tidy_filt2 %>%
   group_by(ChromKey, POS) %>% 
   summarize(obs_AA_count = sum(allele_A == 2, na.rm = TRUE),
@@ -289,6 +311,32 @@ print(locus_HWE %>% mutate(hwe_sig = ifelse(hwe_stats < HWE_inquire, "out of HWE
   mutate(percent_loci = number_loci/(sum(number_loci))*100))
 
 return(locus_HWE)
+  } else if(by_pop == T){
+    obs_allele_count <- gt_tidy_filt2 %>%
+      group_by(ChromKey, POS) %>% 
+      summarize(obs_AA_count = sum(allele_A == 2, na.rm = TRUE),
+                obs_Aa_count = sum(allele_A == 1 & allele_B == 1, na.rm = TRUE),
+                obs_aa_count = sum(allele_B == 2, na.rm = TRUE)) %>%
+      mutate(ChromPos = paste0(ChromKey, "_", POS)) %>% 
+      column_to_rownames(var = "ChromPos") %>% 
+      dplyr::select(obs_AA_count, obs_Aa_count, obs_aa_count)
+    
+    #Calculate concordance with/deviation from HWE
+    hwe_stats <- HWExactStats(as.matrix(obs_allele_count))
+    
+    #Reformat dataframe with HWE calculations so we can merge with genotype dataframe later
+    locus_HWE <- cbind(obs_allele_count, hwe_stats) %>% 
+      rownames_to_column(var = "ChromPos") %>%
+      separate(col = ChromPos, into = c("ChromKey", "POS"), sep = "_") %>% 
+      mutate(ChromKey = as.numeric(ChromKey), POS = as.numeric(POS))
+    
+    cat("Breakdown of loci:")
+    #Calculate how many loci are in and out of HWE based on the threshold set above
+    print(locus_HWE %>% mutate(hwe_sig = ifelse(hwe_stats < HWE_inquire, "out of HWE", "in HWE")) %>% 
+            group_by(hwe_sig) %>% 
+            summarize(number_loci = n()) %>% 
+            mutate(percent_loci = number_loci/(sum(number_loci))*100))
+}
 }
 
 final_sumstats <- function(){
