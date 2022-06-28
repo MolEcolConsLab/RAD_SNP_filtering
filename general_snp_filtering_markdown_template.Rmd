@@ -119,7 +119,7 @@ The dark blue line in each graph is the mean.
 #setwd("...") #(if desired, else comment out)
 # load stats files - O'Leary ----
 file_directory <- "../data/"
-file_prefix <- "CNR_POPs2"
+file_prefix <- "CNR_POPs2.snps"
 popmap_file <- "popmap_allCNR"
 
 #Load stats files for viz
@@ -286,12 +286,13 @@ Finally, we calculate the number of SNPs per locus after filtering.
 gt_tidy_fltr <- remove_failed(gt_tidy) #Checked 05/23/2021
 
 #Iteratively calculate locus missingness and make dataframe of loci to keep
+#Set the "interval" argument to the percent 
 keep <- filter_all(gt_tidy_fltr, Imiss = Imiss, Lmiss = Lmiss, interval = 5) #loops over values of missingness from 100% to Imiss in intervals specified by the interval argument. Iterative filtering improves the number of individuals retained.
 
 #Split output from above function into separate dataframes
 fix_tidy_filt1 <- keep[[1]]
 gt_tidy_filt1 <- keep[[2]]
-(keep_indv <- keep[[3]] %>% arrange(percent_missing)) #Should show 0 missing data
+(keep_indv <- keep[[3]] %>% arrange(percent_missing))
 keep_loci <- keep[[4]]
 
 #calculate individual and locus missingness, and how much we will remove if we filtered immediately without an iterative approach, just to compare. Will likely see fewer individuals and/or loci retained here than in the loop above.
@@ -354,7 +355,7 @@ See this site for more information about general filtering for HWE: https://thie
 ```{r}
 HWE_inquire <- 0.000001
 
-Obs_het_indv <- calc_het(gt_tidy_filt2) #Checked 05/23/2021
+Obs_het_indv <- calc_het(gt_tidy_filt2, popmap = popmap) #Checked 05/23/2021
 
 #Vizualize heterozygosity
 ##Note these numbers may be quite different from the Fis values shown in the first plots because it is calculated differently here.
