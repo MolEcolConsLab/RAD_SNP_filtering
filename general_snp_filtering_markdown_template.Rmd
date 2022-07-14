@@ -12,11 +12,9 @@ date: "4/27/2021"
     toc: yes
 ---
 
-##Checked the below script with the reference-based vcf file for water voles. Everything works, except a warning is issued in the final chunk when we create the radiator_temp dataframe for export saying that NAs were introduced by coercion. The dataframe will still export as expected.
-
 ## Note: Additional filters/plots to consider (from O'Leary et. al.):
-1) % contribution from forward and reverse read (?)
-2) allele balance (already addressed with HDPlot, I think) #LMK_comment: I think what you are referring to is different from the check for excess homozygotes as per Hendricks et al., correct? If yes, then please add this as a an additional step to check
+1) minor allele frequency (we can filter for MAF and/or MAC in Stacks or vcftools, so probably don't need this here as well)
+2) % contribution from forward and reverse read (?)
 
 ## Install and load libraries
 ```{r load libraries, message=FALSE, warning=FALSE}
@@ -60,15 +58,16 @@ options(dplyr.summarise.inform = FALSE) #Shut down notices for summarise (they'r
 **This script is split into 11 steps:**
 1) Import stats from vcftools for full dataset and visualize using a script from O'Leary et. al.
 2) Read in VCF and visualize paralogs wth HDPlot
-3) Filter paralogs and convert vcf to tidy (long) format
-4) Set parameters for filtering and target values for visualization
-5) Filter individuals and loci with lots of missing data
-6) Plot filtered data
-7) Evaluate HWE, heterozygosity and short-distance LD
-8) Filter for heterozygosity and neutral SNPs (ie HWE)
-9) Re-calculate missingness and heterozygosity after filtering
-10) Plot missingness metrics after filtering for HWE, heterozygosity, and, if using a denovo approach, LD
-11) Export data
+3) Visualize genotype frequency and assess heterozygote miscall rate
+4) Filter paralogs and convert vcf to tidy (long) format
+5) Set parameters for filtering and target values for visualization
+6) Filter individuals and loci with lots of missing data
+7) Plot filtered data
+8) Evaluate HWE, heterozygosity and short-distance LD
+9) Filter for heterozygosity, neutral SNPs (ie HWE), and LD if desired
+10) Re-calculate missingness and heterozygosity after filtering
+11) Plot missingness metrics after all filtering
+12) Export data
 
 **How to navigate this document:**
 The steps summarized above are split into chunks. An accompanying Gist document with example graphs and explanation is linked in the Github repository. A summary of what each chunk does, as well as any required input files, are just above each chunk and reiterated in that document. Most of the time, the required input files will just be the output of the previous chunks. Any parameters required in a chunk will be specified at the top.
@@ -80,19 +79,22 @@ Move through this document one section at a time, monitoring the output and sett
 The following folders/files should be present in your working directory. *The below code assumes you are running the chunks from your working directory so the relative file paths are accurate.*
 
 1. a folder called "data" containing the following files, all of which should have been output by vcftools into the "09_vcftools_out" folder in the previous step:
-  - a .vcf file *less than 1GB in size* containing all variants and samples output by vcftools. This will usually end with ".recode.vcf" *(the recommended file size is so that this can be run locally on most laptop or desktop computers, and is reasonable for a SNP file lightly filtered from vcftools and with moderate sample sizes. Those with very large sample sizes and/or loci may be larger than this, and could be run on a computer with more capacity, or this markdown doc could be amended to be run as a script on a cluster, etc.-but we haven't tested it that way yet)*
-  - .het file with individual heterozygosity
-  - .idepth file with depth info by individual
-  - .imiss file with missingness info by individual
-  - .ldepth file with depth info by locus
-  - .lmiss file with missingness info by locus
-  - a tab-delimited population map file, where the first column contains the sample names, and the second column specifies the (putative) population
+  - a .vcf file *less than 1GB in size* containing all variants and samples output by vcftools. This will usually end with ".recode.vcf" **this is required** *(the recommended file size is so that this can be run locally on most laptop or desktop computers, and is reasonable for a SNP file lightly filtered from vcftools and with moderate sample sizes. Those with very large sample sizes and/or loci may be larger than this, and could be run on a computer with more capacity, or this markdown doc could be amended to be run as a script on a cluster, etc.-but we haven't tested it that way yet)*
+  - a tab-delimited population map file, where the first column contains the sample names, and the second column specifies the (putative) population **this is required**
+  - .het file with individual heterozygosity **not required**
+  - .idepth file with depth info by individual **not required**
+  - .imiss file with missingness info by individual **not required**
+  - .ldepth file with depth info by locus **not required**
+  - .lmiss file with missingness info by locus **not required**
+
+
+**If you are missing any of the files listed above that are not required, then just skip lines 128-133; the rest will run as long as you have a a vcf file and population map**
 
 2. a folder called **scripts** with the following scripts:
   - ggplot.R
   - VCFfilterstats.R
   - plotstats.R
-  - filterSNPs.R
+  - filterSNPs_UPDATED.R
 
 
 ### Background information about vcf files
@@ -104,23 +106,24 @@ In general, VCF files contain three regions: the meta region, the fixed region, 
 - The gt region contains genotype information from each individual
 
 
+
+
+
 ## Chunk 1: Visualize raw stats
+Note that chunks 1-3 take awhile to run.
 
 The dark blue line in each graph is the mean.
-
 **BEFORE RUNNING:** 
 1. Assign the path of the data folder to "file_directory", 
 2. Assign the prefix for your vcf file (i.e. the part before "recode.vcf") to the object file_prefix,
 3. Assign the prefix to the popmap file (i.e. the part before .txt) to the "popmap_file" object
-
-**If you don't see any graphs in the plot window, click the Zoom button. The graphs are there, even if they seem invisible.**
 
 
 ```{r stats raw, fig.height=20, fig.width=10, message=FALSE, warning=FALSE}
 #setwd("...") #(if desired, else comment out)
 # load stats files - O'Leary ----
 file_directory <- "../data/"
-file_prefix <- "CNR_POPs2.snps"
+file_prefix <- "populations.snps.recode"
 popmap_file <- "popmap_allCNR"
 
 #Load stats files for viz
@@ -137,7 +140,7 @@ plot_stats_init(ind_stats_raw, loc_stats_raw)
 
 This chunk uses the program vcfR to read the population map and vcf file into R and "tidy" the dataframe (i.e. convert it to long format), which allows us to easily visualize and filter the data. The first step is to identify putative paralogs that have been collapsed together following the method outlined by McKinnery et. al. (2017) here: https://onlinelibrary.wiley.com/doi/abs/10.1111/1755-0998.12613.
 
-Once we've visualized our data in terms of heterozygosity (H) and read ratio deviation (D), we will set limits for each parameter and filter likely paralogs as we convert our vcf file into a tidy format for downstream filtering. 
+Once we've visualized our data in terms of heterozygosity (H) and read ratio deviation (D), we will set limits for each parameter at the bottom of the chunk, and filter likely paralogs in chunk 4, once we convert our vcf file into a tidy format for downstream filtering. The goal with HDPlot is to capture the dense cloud of points that looks like a finger jutting out from the left side of the graph. Set the parameters H and D to try and capture the dense cloud of points as well as possible.
 
 ```{r}
 popmap <- read_tsv(paste0(file_directory, popmap_file, ".txt"), col_names = FALSE) %>% rename(Indiv = X1, Pop = X2)
@@ -145,7 +148,7 @@ popmap <- read_tsv(paste0(file_directory, popmap_file, ".txt"), col_names = FALS
 raw_vcf <- vcfR::read.vcfR(paste0(file_directory,file_prefix,".vcf")) #This takes a minute
 
 
-#identify putative paralogs and plot
+#identify putative paralogs and plot - this may take a long time
 paralog_calcs <- HDplot(raw_vcf) %>%
   arrange(D)
 
@@ -155,6 +158,10 @@ paralog_calcs %>% ggplot()+geom_point(aes(x=H,y=D)) +
   scale_x_continuous(name = "H", breaks = seq(0, 1, by = 0.05)) +
   ggtitle("Heterozygosity (H) vs Read Ratio Deviation (D)")
 
+#Set limits for H and D based on plot from above
+H_lim <- 0.6
+D_lim <- 3.5
+
 
 #Create heterozygosity vs read ratio plot, if wanted
 #paralog_calcs %>% ggplot() + geom_point(aes(x=H,y=ratio))
@@ -162,39 +169,34 @@ paralog_calcs %>% ggplot()+geom_point(aes(x=H,y=D)) +
 
 
 ##Chunk 3: Visualize genotype frequency and assess heterozygote miscall rate
+The chunk below leverages Eric Anderson's package whoa to examine homozygosity bias: https://github.com/eriqande/whoa
+We will calculate a heterozygote miscall rate, graph miscall rate by read depth, and then choose thresholds for filtering based on the graphs.
 ```{r}
 #Make genotype frequency scatter plot
 gfreqs <- exp_and_obs_geno_freqs(raw_vcf) #Calculate expected and observed genotype frequencies
 geno_freqs_scatter(gfreqs)
 
-#Infer heterozygote miscall rate
+#Infer heterozygote miscall rate - this can take a long time
 het.miscall.all <- infer_m(raw_vcf, minBin = 1e15) #Set the minBin argument very high so it runs over all read depths
 
-het.miscall.all$m_posteriors #mean column shows percent heterozygote miscall rate
+het.miscall.all$m_posteriors #mean column shows percent heterozygote miscall rate as a decimal (e.g. 0.1 = 10% miscall rate)
 
 #Infer miscall rate for different read depth bins
-#Can set the bin size to whatever we want; a good starting value is the number of total genotyped sites divided by 100 (see help for infer_m function for more info)
-b <- het.miscall$m_posteriors$total_n/100
+#Can set the bin size to whatever we want; Consider targeting ~ 100 bins, so dividing n_total by 100 and setting the bin size to that (but can vary the bin size b to be whatever you want; see help for infer_m function for more info)
+b <- het.miscall.all$m_posteriors$total_n/100
 het.miscall.bins <- infer_m(raw_vcf, minBin = b)
 
 #Plot heterozygote miscall rate at different read depths to help with filtering.
 posteriors_plot(het.miscall.bins$m_posteriors)
 
 #Based on plot above, set the threshold for filtering loci with a mean depth < mean.depth.threshold
-mean.depth.threshold <- 20
+min.mean.depth <- 25
+max.mean.depth <- 125
 ```
 
-## Chunk 3: Filter paralogs and convert vcf to tidy (long) format
-The goal with HDPlot is to capture the dense cloud of points that looks like a finger jutting out from the left side of the graph. Set the parameters H and D to try and capture the dense cloud of points as well as possible.
-
-Once likely paralogs have been identified, we will convert the vcf file into tidy format and simultaneously filter the SNPs HDplot identified as putative paralogs. The meta, fixed, and genotype regions of the vcf file are converted into separate components of a list, but we will just be working with the dataframes corresponding to the fixed and genotype components. The fixed dataframe is used for filtering loci, and the genotype dataframe is used for filtering samples. In the end, we will use the fixed dataframe to filter loci from the genotype dataframe, and the final genotype dataframe will be exported using radiator.
-
-**Required parameters:** Set limits for H and D after visualizing plot results from above.
+## Chunk 4: Filter paralogs and convert vcf to tidy (long) format
+We will now convert the vcf file into tidy format and simultaneously filter the SNPs HDplot identified as putative paralogs. The meta, fixed, and genotype regions of the vcf file are converted into separate components of a list, but we will just be working with the dataframes corresponding to the fixed and genotype components. The fixed dataframe is used for filtering loci, and the genotype dataframe is used for filtering samples.
 ```{r}
-#Set limits for H and D based on plot from above
-H_lim <- 0.65
-D_lim <- 4
-
 #Create dataframe of putative paralogs based on thresholds set above
 paralogs <- paralog_calcs %>% filter(H > H_lim & abs(D) > D_lim) %>% 
   mutate(POS = as.integer(POS))
@@ -235,29 +237,21 @@ gt_tidy <- raw_vcf_tidy$gt %>%
 gt_meta <- raw_vcf_tidy$meta
 
 #After extracting the relevant dataframes, remove the original imported vcf files from the environment to save working memory (you can always re-run parts of this chunk if you want to work directly with those files)
-raw_vcf <- NULL
-raw_vcf_tidy <- NULL
+rm(raw_vcf)
+rm(raw_vcf_tidy)
 ```
 
 
-## Chunk 4: Set parameters for filtering and target values for visualization
-
+## Chunk 5: Set parameters for filtering and target values for visualization
 There are three steps to the next chunk:
 - Step 1: decide the minimum depth below which a locus will be classified as "missing' and then visualize the amount of missing data per individual.
-- Step 2: based on the plot in the plot window, decide on the degree of data missingness that constitutes calling an individual as "failed". These individuals will be filtered before running any additional calculations. **This is an important step especially for smaller datasets where a number of samples didn't sequence well, because they will count towards the percentage of the total and can result in good loci being thrown out. In our experience,there is often a very obvious break between samples and worked and those that failed to help set this threshold as appropriate for the data**
+- Step 2: based on the plot in the plot window, decide on the degree of data missingness that constitutes calling an individual as "failed". These individuals will be filtered before running any additional calculations. **This is an important step especially for smaller datasets where a number of samples didn't sequence well, because they will count towards the percentage of the total and can result in good loci being thrown out. In our experience, there is often a very obvious break between samples that worked and those that failed, which should help set this threshold as appropriate for the data**
 - Step 3: set additional thresholds for filtering individuals and loci based on data missingness values calculated *after* removing failed individuals and low depth loci.
-
-**Regarding "targets"** ... Because filtering is mostly done using means across individuals and/or loci, setting a "target" allows us to visualize how well our mean-based filtering removed individual samples and/or loci. These "target" metrics will show up as a light blue line in downstream graphs, but are not used for anything else.
-
-**Required parameters:** Thresholds for data missingness across loci (for individuals) and across individuals (for loci).
 ```{r}
-#Set parameters that will determine which individuals and loci are filtered
-
-## Step 1: set criteria below which very low-depth loci will be called as missing
+## Step 1: set criteria below which very low-depth loci will be called as missing. Consider setting this to 2m
 min_depth_indv <- 5 #Minimum depth for a locus to be included in subsequent analyses
 
 #Recode loci in each individual as missing based on the threshold above
-#Checked 05/06/2021
 gt_tidy <- gt_tidy %>% mutate(gt_DP_recode = ifelse(gt_DP < min_depth_indv, NA, gt_DP))
 
 #Calculate missingness per individual
@@ -271,29 +265,28 @@ p0.1 <- ggplot(all_indv, aes(x = percent_missing)) +
   labs(x = "% missing data per indv")
 p0.1 #look at this to gauge and tweak threshold for failed vs. passed samples
 
-#Step 2: based on the plot, tweak the Ipass filter below. These individuals will be removed before running additional calculations (e.g. locus missingness). #Filter individuals with this much missing data (percent-wise) or more before instituting additional filters. This should target individuals that clearly failed (didn't sequence well), to avoid skewing filtering below. Mostly this step is needed when datasets don't have a large total sample size and a decent number of the samples failed. If using, may want to play around with this value to see where appropriate threshold is (see histogram below)
+#Step 2: based on the plot, tweak the Ipass filter below. These individuals will be removed before running additional calculations (e.g. locus missingness). This should target individuals that clearly failed (didn't sequence well), to avoid skewing filtering below. Mostly this step is needed when datasets don't have a large total sample size and a decent number of the samples failed. If using, may want to play around with this value to see where appropriate threshold is (see histogram in plot window)
 Ipass <- 70 
 
 
 ##Step 3: set criteria for additional filtering AFTER removing failed individuals and low-depth loci and recalculating missingness.
 Imiss <- 30 #After removing failed individuals, filter individuals that still have this much missing data or more
 Lmiss <- 10 #After removing failed individuals, remove loci that are missing in this percent of individuals
-#minor_allele_indv <- 0 #Number of individuals the minor allele must be present in #JDS: remove? #LMK: I'd explain why this is here and keep, pointing out that (if I'm understanding how you used it below) if it's kept at 0 then it's redundant to removing non-variant "SNPs" below, but there may be reasons to set higher. Related, is there an MAF filter anywhere here or earlier in the workflows? If not we'll want to address.
+#minor_allele_indv <- 0 #Number of individuals the minor allele must be present in #JDS: remove? #LMK: I'd explain why this is here and keep, pointing out that (if I'm understanding how you used it below) if it's kept at 0 then it's redundant to removing non-variant "SNPs" below, but there may be reasons to set higher.
 
 ####------For viz only-------####
-min_mean_depth_lim <- 10 #minimum mean depth used in vcftools
+min_mean_depth_lim <- 10 #minimum mean depth per individual (used in vcftools)
 
 #Set ideal targets. 
-target_miss_per_indv <- 10 #target for % missing loci per individual
-target_miss_per_locus <- 10 #target for % missing individuals per individual locus
-target_depth <- 20 #target depth per individual and per locus
+target_miss_per_indv <- Imiss #target for % missing loci per individual
+target_miss_per_locus <- Lmiss #target for % missing individuals per individual locus
+target_depth <- min.mean.depth #target depth per individual and per locus
 ```
 
 
 
 
-## Chunk 5: Filter individuals and loci with missing data
-
+## Chunk 6: Filter individuals and loci with missing data
 Here, we use the parameters specified above to filter the dataset for missingness and read depth at two levels: individual and SNP. We create separate dataframes for the individuals/SNPs we wish to keep and those we will remove.
 Then, we filter these SNPs/individuals from our main gt and fixed dataframes. 
 Finally, we calculate the number of SNPs per locus after filtering.
@@ -301,17 +294,14 @@ Finally, we calculate the number of SNPs per locus after filtering.
 **See the console after running this chunk for the summary of how many individuals/SNPs were kept and how many were removed.** If too many were removed or kept, simply change the parameters in the previous chunk and re-run.
 
 **This chunk takes ~ a minute to run**
-
-*Presently, the script removes loci that have a mean depth (across individuals) that is > 2 standard deviations from the mean. This can be adjusted as appropriate/desired for each dataset.*
-
-**No required parameters for this chunk; they're all set in the previous chunk**
 ```{r}
 #Remove failed individuals before filtering
 gt_tidy_fltr <- remove_failed(gt_tidy) #Checked 05/23/2021
 
 #Iteratively calculate locus missingness and make dataframe of loci to keep
-#Set the "interval" argument to the percent 
-keep <- filter_all(gt_tidy_fltr, Imiss = Imiss, Lmiss = Lmiss, interval = 5, mean.depth.threshold = mean.depth.threshold) #loops over values of missingness from 100% to Imiss in intervals specified by the interval argument. Iterative filtering improves the number of individuals retained.
+#Set the "interval" argument to the interval that you would like to use to iteratively filter individuals. For instance, if interval = 5 (the default), then individuals with > 95% missing data will be removed first, then loci will be filtered, then individuals with 90% missing data, then loci, etc. 
+#Because the interval for loci and individuals will not be the same (e.g. you want want to filter down to 30% missingness for individuals, but 10% for loci), the script will automatically calculate intervals for locus missingness, based on the number of intervals for such that for each iterative round of filtering individuals, there will be one corresponding round of filtering loci. If there are suggestions for how to do this better, I'm definitely open to them!
+keep <- filter_all(gt_tidy_fltr, Imiss = Imiss, Lmiss = Lmiss, interval = 5, min.mean.depth = min.mean.depth, max.mean.depth = max.mean.depth) #loops over values of missingness from 100% to Imiss in intervals specified by the interval argument. Iterative filtering improves the number of individuals retained.
 
 #Split output from above function into separate dataframes
 fix_tidy_filt1 <- keep[[1]]
@@ -319,31 +309,29 @@ gt_tidy_filt1 <- keep[[2]]
 (keep_indv <- keep[[3]] %>% arrange(percent_missing))
 keep_loci <- keep[[4]]
 
-#calculate individual and locus missingness, and how much we will remove if we filtered immediately without an iterative approach, just to compare. Will likely see fewer individuals and/or loci retained here than in the loop above.
+#if curious, calculate individual and locus missingness, and how much we will remove if we filtered immediately without an iterative approach, just to compare. Will likely see fewer individuals and/or loci retained here than in the loop above.
 #miss.stats <- calc_missing(gt_tidy_fltr) 
 
 #filter gt dataframe so only good loci remain
-gt_tidy_filt2 <- merge_tables(gt_tidy_filt1, fix_tidy_filt1) #Checked 05/23/2021
+gt_tidy_filt2 <- merge_tables(gt_tidy_filt1, fix_tidy_filt1)
 
-#Calculate mean read depth per locus and individual
-mean_read_depth_indv <- calc_depth_indv(gt_tidy_filt2) #Checked 05/23/2021
-mean_read_depth_loci <- calc_depth_loci(gt_tidy_filt2) #Checked 05/23/2021
-
-#Re-calculate mean depth after removing low depth loci
-mean_read_depth_indv <- calc_depth_indv(gt_tidy_filt2) #Checked 05/23/2021
-mean_read_depth_loci <- calc_depth_loci(gt_tidy_filt2) #Checked 05/23/2021
+#Calculate mean read depth per locus and individual after removing low depth loci
+mean_read_depth_indv <- calc_depth_indv(gt_tidy_filt2)
+mean_read_depth_loci <- calc_depth_loci(gt_tidy_filt2)
 
 #Calculate number of SNPs per locus (reference-based)
-SNPs_per_locus <- fix_tidy_filt2 %>% count(ChromKey, name = "SNPs")
+SNPs_per_locus <- fix_tidy_filt1 %>% count(ChromKey, name = "SNPs")
 
 #Show summary of filtering info in console
 sumstats()
+
+#Free up memory from unused objects
+gc()
 ```
 
 
 
-## Chunk 6: Plot filtered data
-
+## Chunk 7: Plot filtered data
 The plots produced here correspond to missingness and depth at the individual and population level after instituting the above filters.
 
 The lines in the graphs correspond to: 
@@ -368,22 +356,21 @@ SNPs_per_locus %>%
 
 
 
-## Chunk 7: Evaluate heterozygosity and HWE
+## Chunk 8: Evaluate heterozygosity and HWE
 
 This chunk will calculate individual heterozygosity and produce a graph of individual level heterozygosity and a table showing how many SNPs conform (or don't) to hardy-weinberg equilibrium (HWE) based on the threshold we set for HWE_inquire at the top of the chunk.
 
-**The main purpose of this chunk** is to help us identify an appropriate threshold for heterozygosity to filter samples that are likely to be contaminated, and to help us refine our threshold for filtering loci based on concordance with hardy-weinberg. When the chunk is finished running, see the graph for plots of individual-level heterozygosity, and the console for the number of SNPs that conform/don't to HWE based on the user-defined threshold. If we don't have well-defined populations yet - ie if we are planning to use these data to identify putative subpopulations - then it's wise to set the threshold to a very low e.g. .000001 value. *Also reminder: filtering by HWE is appropriate for analyses that rely on putatively neutral loci; this step should be omitted/adjusted for other analyses aiming for loci under selection, etc.*
-
+**The main purpose of this chunk** is to help us visualize heterozygosity to see if we need to change any of the above filters. When the chunk is finished running, see the graph for plots of individual-level heterozygosity, and the console for the number of SNPs that conform/don't to HWE based on the user-defined threshold. If we don't have well-defined populations yet - ie if we are planning to use these data to identify putative subpopulations - then it's wise to set the threshold to a very low e.g. .000001 value. *Also reminder: any filtering for HWE should be omitted/adjusted for analyses targeting loci under selection*
 
 See this site for more information about general filtering for HWE: https://thierrygosselin.github.io/radiator/reference/filter_hwe.html
 
 **This chunk takes ~ a minute to run**
-
-**Required parameters:** threshold for evaluating how many SNPs are in/out of HWE.
 ```{r}
+#What are we calling our threshold for conformance to HWE?
 HWE_inquire <- 0.000001
 
-Obs_het_indv <- calc_het(gt_tidy_filt2, popmap = popmap) #Checked 05/23/2021
+#Calculate individual heterozygosity
+Obs_het_indv <- calc_het(gt_tidy_filt2, popmap = popmap)
 
 #Vizualize heterozygosity
 ##Note these numbers may be quite different from the Fis values shown in the first plots because it is calculated differently here.
@@ -397,47 +384,49 @@ ggplot(Obs_het_indv, aes(x = factor(Pop), y = Obs_het, color = Pop)) +
   #ylab(expression(paste(F[IT]))) +
   theme_facet
 
-locus_HWE <- calc_hwe(gt_tidy_filt2) #Checked 05/23/2021; add argument for by_pop
+locus_HWE <- calc_hwe(gt_tidy_filt2, by_pop = T) #if by_pop = T, then HWE will be calculated for each population separately and return a dataframe of HWE values for each locus from each population with these values; if by_pop = F, then HWE will be calculated for the whole metapopulation
 ```
 
+## Chunk 9: Filter for heterozygosity, HWE (i.e. putatively neutral SNPs) and LD
+If desired, this chunk will filter our dataset for individual samples with high levels of heterozygosity, for individual loci that don't conform to HWE based on the thresholds we set at the top of the chunk, and/or for short-distance LD by randomly selecting one SNP per locus *after* the filter for HWE and heterozygosity. **If data were generated using a reference-based approach, then do not use the LD filter.**
 
+If you'd prefer to skip filtering for HWE and LD, then change the "filter.HWE.LD" object to anything other than "yes". If you want to filter for one but not the other, play around with the function inside the if statement after the "create final filtered datasets" section. .. JDS note to self: flag this to streamline 07/14/2022.
 
-
-## Chunk 8: Filter for heterozygosity, HWE (i.e. putatively neutral SNPs) and LD
-
-This chunk will filter our dataset for individual samples with high levels of heterozygosity and for individual loci that don't conform to HWE based on the thresholds we set at the top of the chunk. It will also filter for short-distance LD by randomly selecting one SNP per locus *after* the filter for HWE and heterozygosity. **If data were generated using a reference-based approach, then do not use the LD filter (comment out line 402).**
-
-
-**Required parameters:** filtering threshold for heterozygosity and HWE.
 ```{r}
 max_het <- 0.6
 HWE_threshold <- HWE_inquire #HWE threshold for preserving a SNP
+filter.HWE.LD <- "yes"
 
+#Identify samples with very high heterozygosity
 high_het_samples <- Obs_het_indv %>% filter(Obs_het > max_het)
 
-#Filter for heterozygosity
+#Mark individuals with good heterozygosity levels
 keep_hetero_indiv <- gt_tidy_filt2 %>% anti_join(high_het_samples, by = "Indiv") %>%
   count(Indiv)
 
+#Mark individuals with heterozygosity levels above the threshold
 gt_tidy_hetero_remove <- gt_tidy_filt2 %>% semi_join(high_het_samples, by = "Indiv")
 
-#Filter for HWE
-locus_HWE_remove <- locus_HWE %>% 
-  filter(hwe_stats < HWE_threshold)
+#Identify loci that are out of HWE, either within their population (if by_pop = T for the calc_hwe function) or over all populations (if by_pop = F)
+(locus_HWE_remove <- locus_HWE %>% 
+  filter(hwe_stats < HWE_threshold))
 
-fix_tidy_filt2 <- fix_tidy_filt1 %>% 
-  anti_join(locus_HWE_remove, by = c("ChromKey", "POS"))
-
-#Filter for short-distance LD
+#Identify one random SNP per locus
 ##JDS note: Comment out below if reference-based approach was used upstream
- LD_loci_to_keep <- fix_tidy_filt2 %>% group_by(CHROM) %>%
+ LD_loci_to_keep <- fix_tidy_filt1 %>% group_by(CHROM) %>%
   slice_sample(n=1)
 
 
 ####------Create final filtered dataframes------####
-##If filtered for short-distance LD above, uncomment semi_join below.
-fix_tidy_filt_final <- fix_tidy_filt2 %>% semi_join(LD_loci_to_keep, by = c("ChromKey", "CHROM", "POS"))#run this for de novo when want to filter by short LD
-#fix_tidy_filt_final <- fix_tidy_filt2 #run this one for reference baesd and/or when DONT want to filter for short LD (e.g., creating microhaplotypes, etc.)
+#Can edit below if wanting to only filter for LD or HWE
+ if(filter.HWE.LD == "yes"){
+  fix_tidy_filt_final <- fix_tidy_filt1 %>%
+    semi_join(LD_loci_to_keep, by = c("ChromKey", "CHROM", "POS")) %>% #one SNP per locus
+    anti_join(locus_HWE_remove, by = c("ChromKey", "POS")) #HWE
+} else {
+  fix_tidy_filt_final <- fix_tidy_filt1
+}
+
 
 fix_tidy_4_final_merge <- fix_tidy_filt_final %>% dplyr::select(ChromKey, CHROM, POS, REF, ALT)
 
@@ -450,18 +439,14 @@ final_sumstats()
 ```
 
 
-
-## Chunk 9: Re-calculate missingness and heterozygosity after filtering
-
+## Chunk 10: Re-calculate missingness and heterozygosity after filtering
 This chunk will calculate missingness and heterozygosity for the remaining dataset after filtering in the previous chunks. These calculations will be visualized in the following chunks.
 
-**No required parameters for this chunk**
 ```{r}
 #Calculate missingness for remaining individuals
 final_indv_stats <- gt_tidy_filt_final %>% group_by(Indiv) %>% 
   summarize(percent_missing = sum(is.na(gt_DP))/n() * 100) %>% 
   left_join(popmap, by = "Indiv")
-
 
 #Calculate missingness for remaining loci
 final_loc_stats <- gt_tidy_filt_final %>%
@@ -473,7 +458,6 @@ final_mean_depth_indv <- gt_tidy_filt_final %>% group_by(Indiv) %>%
   summarize(mean_depth = mean(gt_DP, na.rm = TRUE)) %>% 
   arrange(desc(mean_depth)) %>% 
   left_join(popmap, by = "Indiv")
-
 
 #Calculate mean read depth for remaining loci using remaining individuals
 final_mean_depth_loc <- gt_tidy_filt_final %>% group_by(ChromKey, POS) %>% 
@@ -493,14 +477,10 @@ final_obs_het_indv <- gt_tidy_filt_final %>%
 ```
 
 
-
-
-## Chunk 10: Make final plots after filtering for HWE, heterozygosity, and, if using a denovo approach, LD
-
+## Chunk 11: Make final plots after all filtering
 Again, dark blue line = mean
 light blue line = target
 red line = threshold ie shouldn't be any above this point
-**No required parameters for this chunk**
 ```{r}
 #Plot final individual stats
 plot_final_indv(final_indv_stats, final_loc_stats, final_mean_depth_indv, final_mean_depth_loc)
@@ -517,10 +497,7 @@ plot_final_het_denovo(final_SNPs_per_locus, final_obs_het_indv)
 ```
 
 
-
-
-## Chunk 11: Export data using radiator and vcfR
-
+## Chunk 12: Export data using radiator and vcfR
 Radiator exports data to a variety of formats from a tidy dataframe. To take advantage of this, we need to reformat our final tidy dataframe to emulate radiator's expectations. Then, we call on radiator for export. 
 
 All the specified file formats *except* genlight will produce both an external file in the working directory and save the file as an object in R for immediate analysis. The genlight format export doesn't work with radiator. Instead, we export a new vcf file using radiator, then read that in with vcfR and immediately export to genlight format using vcfR. The resulting genlight file is not created in the working directory, but *is* stored as an object in R.
@@ -532,14 +509,12 @@ The columns radiator expects (from running radiator::read_vcf) are:
 4. GT (the genotype coding 'a la genepop': 001002, 001001, 000000): FALSE; GT is 001001 for homozygous for the first (reference) allele, 001002 for heterozygous (001 for first allele, and 002 for second),  and 002002 for homozygous for second (alternate) allele
 
 **This chunk takes a few minutes to run because the data need to be reformatted to fit radiator's expectations.**
-
-**No required parameters for this chunk**
 ```{r}
 #Clear environment of large files that aren't being used anymore so the rest of the chunk can run faster
 #gt_tidy <- NULL
-gt_tidy_filt1 <- NULL
+rm(gt_tidy_filt1)
 #fix_tidy <- NULL
-fix_tidy_filt1 <- NULL
+rm(fix_tidy_filt1)
 
 ####---------Format final data to conform to radiator's expectations for export---------####
 
