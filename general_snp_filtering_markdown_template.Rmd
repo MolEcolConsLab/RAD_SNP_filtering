@@ -422,7 +422,7 @@ gt_tidy_hetero_remove <- gt_tidy_filt2 %>% semi_join(high_het_samples, by = "Ind
  if(filter.HWE.LD == "yes"){
   fix_tidy_filt_final <- fix_tidy_filt1 %>%
     semi_join(LD_loci_to_keep, by = c("ChromKey", "CHROM", "POS")) %>% #one SNP per locus
-    anti_join(locus_HWE_remove, by = c("ChromKey", "POS")) #HWE
+    anti_join(locus_HWE_remove, by = c("ChromKey", "POS")) #HWE; can include "pop" here if you just want to filter the loci from the population
 } else {
   fix_tidy_filt_final <- fix_tidy_filt1
 }
