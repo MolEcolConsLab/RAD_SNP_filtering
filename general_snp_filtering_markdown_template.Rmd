@@ -356,7 +356,7 @@ SNPs_per_locus %>%
 
 
 
-## Chunk 8: Evaluate heterozygosity and HWE
+## Chunk 8: Evaluate heterozygosity, HWE, and LD
 
 This chunk will calculate individual heterozygosity and produce a graph of individual level heterozygosity and a table showing how many SNPs conform (or don't) to hardy-weinberg equilibrium (HWE) based on the threshold we set for HWE_inquire at the top of the chunk.
 
@@ -385,6 +385,10 @@ ggplot(Obs_het_indv, aes(x = factor(Pop), y = Obs_het, color = Pop)) +
   theme_facet
 
 locus_HWE <- calc_hwe(gt_tidy_filt2, by_pop = T) #if by_pop = T, then HWE will be calculated for each population separately and return a dataframe of HWE values for each locus from each population with these values; if by_pop = F, then HWE will be calculated for the whole metapopulation
+
+#Calculate LD -- JDS note to self: use genetics package; vcf tools takes too long (still running after four hours)
+
+
 ```
 
 ## Chunk 9: Filter for heterozygosity, HWE (i.e. putatively neutral SNPs) and LD
