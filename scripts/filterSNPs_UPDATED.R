@@ -280,7 +280,6 @@ return(Obs_het_indv)
 ############################################################################
 
 #Calculate frequency of AA, Aa, and aa genotypes at each locus and format for HWE calculations (which only accepts a matrix of genotype frequencies)
-#Checked 05/06/2021
 
 #Adding argument to potentially loop over populations. Need to keep working on this 06/28/2022
 calc_hwe <- function(gt_tidy_filt2, by_pop = T){
@@ -367,6 +366,39 @@ return(locus_HWE.df)
   }
   return(locus_HWE.df)
 }
+
+
+############################################################################
+####Part 6.3: Filter for LD by removing loci with R2 values above a threshold####
+############################################################################
+#An alternative if we want to us bcftools to calculate different R^2 values
+#In this function; set a parameter for the number of R2 thresholds used
+#Separate the FILTER column based on the number of thresholds used, and name the columns based on the R2 value.
+#Have the filter thresholds show up in the same order, then name the columns based on the threshold.
+#Have an if statement to evaluate which threshold we're filtering; if it's the smallest (which will be column 1), then keep the rows that do NOT have the filter label; if it's one of the smallest, then filter by that column.
+
+filter.LD <- function(df = fix_tidy_filt1, threshold = 0.4, metric = "D"){
+
+  df2 <- df %>% mutate(CHROMPOS = paste0(CHROM, "_", POS))
+  
+  if(metric == "D"){
+    loci2remove <- df2 %>% mutate(LINKAGE_POS = paste0(CHROM, "_", POS_LD)) %>% 
+      dplyr::filter(LD >= threshold) %>% 
+      pull(LINKAGE_POS)
+    
+    df_final <- df2 %>% dplyr::filter(!CHROMPOS %in% loci2remove)
+  } else if(metric == "R2"){
+    loci2remove <- df2 %>% mutate(LINKAGE_POS = paste0(CHROM, "_", POS_R2)) %>% 
+      dplyr::filter(R2 >= threshold) %>% 
+      pull(LINKAGE_POS)
+    
+    df_final <- df2 %>% dplyr::filter(!CHROMPOS %in% loci2remove)
+    
+  }
+
+  return(df_final)
+  }
+
 
 final_sumstats <- function(){
   cat("Filtering for individuals with excess heterozygosity (>", max_het, ") removed ", nrow(gt_tidy_hetero_remove), "individuals.\n", nrow(keep_hetero_indiv), "individuals remain.\n\nFiltering for loci out of HWE at p <", HWE_threshold, "results in removal of", nrow(locus_HWE_remove),"SNPs.\n\nAfter filtering for short-distance LD (if selected), keeping one random SNP per locus,", nrow(fix_tidy_filt_final), "SNPs remain.")

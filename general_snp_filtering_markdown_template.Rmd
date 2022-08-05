@@ -12,9 +12,7 @@ date: "4/27/2021"
     toc: yes
 ---
 
-## Note: Additional filters/plots to consider (from O'Leary et. al.):
-1) minor allele frequency (we can filter for MAF and/or MAC in Stacks or vcftools, so probably don't need this here as well)
-2) % contribution from forward and reverse read (?)
+1) note to self: Added function for LD filtering to the filterSNPs_UPDATED script but did not add it here yet. Thinking we actually want to filter for LD using bcftools before importing to R.
 
 ## Install and load libraries
 ```{r load libraries, message=FALSE, warning=FALSE}
@@ -123,7 +121,7 @@ The dark blue line in each graph is the mean.
 #setwd("...") #(if desired, else comment out)
 # load stats files - O'Leary ----
 file_directory <- "../data/"
-file_prefix <- "populations.snps.recode"
+file_prefix <- "CNRLD3"
 popmap_file <- "popmap_allCNR"
 
 #Load stats files for viz
@@ -215,7 +213,7 @@ print(paste0("Identified ", nrow(paralogs), " likely paralogs. These will be rem
 
 
 #Convert vcf file to tibble
-options(tibble.print_max = Inf)
+options(tibble.print_max = 30)
 raw_vcf_tidy <- vcfR2tidy(raw_vcf) #This takes awhile
 
 
