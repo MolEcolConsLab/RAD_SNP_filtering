@@ -121,7 +121,7 @@ The dark blue line in each graph is the mean.
 #setwd("...") #(if desired, else comment out)
 # load stats files - O'Leary ----
 file_directory <- "../data/"
-file_prefix <- "CNRLD3"
+file_prefix <- "CNR_POPs2"
 popmap_file <- "popmap_allCNR"
 
 #Load stats files for viz
@@ -188,8 +188,8 @@ het.miscall.bins <- infer_m(raw_vcf, minBin = b)
 posteriors_plot(het.miscall.bins$m_posteriors)
 
 #Based on plot above, set the threshold for filtering loci with a mean depth < mean.depth.threshold
-min.mean.depth <- 25
-max.mean.depth <- 125
+min.mean.depth <- 15
+max.mean.depth <- Inf
 ```
 
 ## Chunk 4: Filter paralogs and convert vcf to tidy (long) format
@@ -247,7 +247,7 @@ There are three steps to the next chunk:
 - Step 3: set additional thresholds for filtering individuals and loci based on data missingness values calculated *after* removing failed individuals and low depth loci.
 ```{r}
 ## Step 1: set criteria below which very low-depth loci will be called as missing. Consider setting this to 2m
-min_depth_indv <- 5 #Minimum depth for a locus to be included in subsequent analyses
+min_depth_indv <- 6 #Minimum depth for a locus to be included in subsequent analyses
 
 #Recode loci in each individual as missing based on the threshold above
 gt_tidy <- gt_tidy %>% mutate(gt_DP_recode = ifelse(gt_DP < min_depth_indv, NA, gt_DP))
@@ -384,9 +384,6 @@ ggplot(Obs_het_indv, aes(x = factor(Pop), y = Obs_het, color = Pop)) +
 
 locus_HWE <- calc_hwe(gt_tidy_filt2, by_pop = T) #if by_pop = T, then HWE will be calculated for each population separately and return a dataframe of HWE values for each locus from each population with these values; if by_pop = F, then HWE will be calculated for the whole metapopulation
 
-#Calculate LD -- JDS note to self: use genetics package; vcf tools takes too long (still running after four hours)
-
-
 ```
 
 ## Chunk 9: Filter for heterozygosity, HWE (i.e. putatively neutral SNPs) and LD
@@ -397,7 +394,7 @@ If you'd prefer to skip filtering for HWE and LD, then change the "filter.HWE.LD
 ```{r}
 max_het <- 0.6
 HWE_threshold <- HWE_inquire #HWE threshold for preserving a SNP
-filter.HWE.LD <- "yes"
+filter.HWE <- "no"
 
 #Identify samples with very high heterozygosity
 high_het_samples <- Obs_het_indv %>% filter(Obs_het > max_het)
@@ -421,7 +418,7 @@ gt_tidy_hetero_remove <- gt_tidy_filt2 %>% semi_join(high_het_samples, by = "Ind
 
 ####------Create final filtered dataframes------####
 #Can edit below if wanting to only filter for LD or HWE
- if(filter.HWE.LD == "yes"){
+ if(filter.HWE == "yes"){
   fix_tidy_filt_final <- fix_tidy_filt1 %>%
     semi_join(LD_loci_to_keep, by = c("ChromKey", "CHROM", "POS")) %>% #one SNP per locus
     anti_join(locus_HWE_remove, by = c("ChromKey", "POS")) #HWE; can include "pop" here if you just want to filter the loci from the population
@@ -568,11 +565,18 @@ radiator_temp$VARIANT_ID <- radiator_temp %>% group_by(MARKERS) %>%
 radiator_temp <- radiator_temp %>% dplyr::select(VARIANT_ID, MARKERS, CHROM, LOCUS, POS, COL, REF, ALT, INDIVIDUALS, GT_BIN, GT, GT_VCF, gt_AD, gt_DP, gt_GQ, STRATA)
 
 #Write final tidy dataframe so we can import it later without having to re-run the whole script
-write_csv2(radiator_temp, file = "radiator_filtered_tibble.csv")
+write_csv2(radiator_temp, file = "../data/radiator_filtered_tibble.csv")
 
 ####-----Export to other formats------####
 #Export to vcf
-radiator::write_vcf(radiator_temp, filename = "radiator_ref_filtered_vcf_05.24.2021")
+radiator::write_vcf(radiator_temp, filename = "../data/CNR_POPs2_filtered_vcf")
+```
+
+Next, add LD filter and 
+
+
+```{r}
+
 
 #export to genind
 genind <- radiator::write_genind(radiator_temp, write = TRUE) #radiator -- WORKS
