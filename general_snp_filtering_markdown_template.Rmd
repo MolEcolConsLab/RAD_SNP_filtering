@@ -121,7 +121,7 @@ The dark blue line in each graph is the mean.
 #setwd("...") #(if desired, else comment out)
 # load stats files - O'Leary ----
 file_directory <- "../data/"
-file_prefix <- "CNR_POPs2"
+file_prefix <- "CNR_POPs2.snps"
 popmap_file <- "popmap_allCNR"
 
 #Load stats files for viz
@@ -395,6 +395,7 @@ If you'd prefer to skip filtering for HWE and LD, then change the "filter.HWE.LD
 max_het <- 0.6
 HWE_threshold <- HWE_inquire #HWE threshold for preserving a SNP
 filter.HWE <- "no"
+filter.LD <- "no"
 
 #Identify samples with very high heterozygosity
 high_het_samples <- Obs_het_indv %>% filter(Obs_het > max_het)
@@ -419,13 +420,18 @@ gt_tidy_hetero_remove <- gt_tidy_filt2 %>% semi_join(high_het_samples, by = "Ind
 ####------Create final filtered dataframes------####
 #Can edit below if wanting to only filter for LD or HWE
  if(filter.HWE == "yes"){
-  fix_tidy_filt_final <- fix_tidy_filt1 %>%
-    semi_join(LD_loci_to_keep, by = c("ChromKey", "CHROM", "POS")) %>% #one SNP per locus
+  fix_tidy_filt2 <- fix_tidy_filt1 %>%
     anti_join(locus_HWE_remove, by = c("ChromKey", "POS")) #HWE; can include "pop" here if you just want to filter the loci from the population
 } else {
-  fix_tidy_filt_final <- fix_tidy_filt1
+  fix_tidy_filt2 <- fix_tidy_filt1
 }
 
+ if(filter.LD == "yes"){
+       fix_tidy_filt_final <- fix_tidy_filt2 %>% semi_join(LD_loci_to_keep, by = c("ChromKey", "CHROM", "POS")) #one SNP per locus
+ } else {
+   fix_tidy_filt_final <- fix_tidy_filt2
+ }
+ 
 
 fix_tidy_4_final_merge <- fix_tidy_filt_final %>% dplyr::select(ChromKey, CHROM, POS, REF, ALT)
 
@@ -572,8 +578,62 @@ write_csv2(radiator_temp, file = "../data/radiator_filtered_tibble.csv")
 radiator::write_vcf(radiator_temp, filename = "../data/CNR_POPs2_filtered_vcf")
 ```
 
-Next, add LD filter and 
 
+## Chunk 13: Import vcf file with LD data, filter for LD, and export again
+```{r Filter for LD and export}
+#setwd("...") #(if desired, else comment out)
+# load stats files - O'Leary ----
+file_directory_filt <- "../data/"
+file_prefix_filt <- "CNR_POPs2_filtered"
+popmap_file <- "popmap_allCNR"
+
+popmap <- read_tsv(paste0(file_directory, popmap_file, ".txt"), col_names = FALSE) %>% rename(Indiv = X1, Pop = X2)
+
+filtered_vcf <- vcfR::read.vcfR(paste0(file_directory_filt,file_prefix_filt,".vcf")) #This takes a minute
+
+
+#Convert vcf file to tibble
+options(tibble.print_max = 30)
+filtered_vcf_tidy <- vcfR2tidy(filtered_vcf) #This takes awhile
+
+
+#Extract fixed and gt dataframes and subset for useful columns
+fix_tidy <- filtered_vcf_tidy$fix
+
+#Convert gt element to tidy format and remove paralogs 
+gt_tidy <- raw_vcf_tidy$gt %>%
+  left_join(popmap, by = "Indiv") %>% 
+  anti_join(paralogs, by = c("ChromKey", "POS"))
+
+#Store meta region
+gt_meta <- raw_vcf_tidy$meta
+```
+
+
+
+## Chunk 14: Calculate heterozygote miscall rate once more with whoa
+```{r}
+#Make genotype frequency scatter plot
+gfreqs <- exp_and_obs_geno_freqs(raw_vcf) #Calculate expected and observed genotype frequencies
+geno_freqs_scatter(gfreqs)
+
+#Infer heterozygote miscall rate - this can take a long time
+het.miscall.all <- infer_m(raw_vcf, minBin = 1e15) #Set the minBin argument very high so it runs over all read depths
+
+het.miscall.all$m_posteriors #mean column shows percent heterozygote miscall rate as a decimal (e.g. 0.1 = 10% miscall rate)
+
+#Infer miscall rate for different read depth bins
+#Can set the bin size to whatever we want; Consider targeting ~ 100 bins, so dividing n_total by 100 and setting the bin size to that (but can vary the bin size b to be whatever you want; see help for infer_m function for more info)
+b <- het.miscall.all$m_posteriors$total_n/100
+het.miscall.bins <- infer_m(raw_vcf, minBin = b)
+
+#Plot heterozygote miscall rate at different read depths to help with filtering.
+posteriors_plot(het.miscall.bins$m_posteriors)
+
+#Based on plot above, set the threshold for filtering loci with a mean depth < mean.depth.threshold
+min.mean.depth <- 15
+max.mean.depth <- Inf
+```
 
 ```{r}
 
