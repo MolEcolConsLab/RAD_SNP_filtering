@@ -502,6 +502,65 @@ plot_final_het_denovo(final_SNPs_per_locus, final_obs_het_indv)
 ```
 
 
+## Chunk 12: Make and export whitelist of loci to filter vcf file
+```{r}
+#Export remaining individuals to whitelist text file for filtering original VCF
+gt_tidy_filt_final %>% dplyr::select(Indiv) %>% distinct(Indiv) %>% 
+  write_tsv(file = "Whitelist_indivs.txt")
+
+#Export remaining individuals to whitelist text file for filtering original VCF
+fix_tidy_filt_final %>% dplyr::select(CHROM, POS) %>% dplyr::mutate(CHROM = as.integer(CHROM)) %>% 
+  distinct(CHROM, POS) %>% dplyr::arrange(CHROM, POS) %>%
+  write_tsv(file = "Whitelist_loci.txt")
+```
+
+
+
+## Chunk 13: Import filtered vcf with LD annotations
+Quirks:
+- any example where an individual has a locus with depth < the minimum specified with min_depth_indv IF the locus was retained in the final dataset, then that locus will be represented here i.e. it will not show up as an NA. We could also filter these potentially in bcftools?
+
+```{r}
+file_directory2 <- "../data/"
+file_prefix2 <- "CNR_POPs2_test_LD"
+#popmap_file2 <- "popmap_allCNR"
+
+#popmap <- read_tsv(paste0(file_directory, popmap_file, ".txt"), col_names = FALSE) %>% rename(Indiv = X1, Pop = X2)
+
+filtered_vcf <- vcfR::read.vcfR(paste0(file_directory2, file_prefix2,".vcf")) #This takes a minute
+
+
+#Convert vcf file to tibble
+options(tibble.print_max = 30)
+filtered_vcf_tidy <- vcfR2tidy(filtered_vcf) #This takes awhile
+
+filtered_gt_tidy <- filtered_vcf_tidy$gt
+filtered_fix_tidy <- filtered_vcf_tidy$fix
+
+## set criteria below which very low-depth loci will be called as missing. Use same value as above
+min_depth_indv <- 6 #Minimum depth for a locus to be included in subsequent analyses
+
+#Check for instances of NA in dataset
+filtered_gt_tidy %>% summarize(sum(is.na(gt_DP) == TRUE))
+
+#Check how many instances of a low depth locus
+filtered_gt_tidy %>% summarize(low_depth_loci = sum(gt_DP < min_depth_indv, na.rm = TRUE))
+
+#Recode loci in each individual as missing based on the threshold above
+#filtered_gt_tidy %>% mutate(gt_DP_recode = ifelse(gt_DP < min_depth_indv, NA, gt_DP))
+
+#Filter for LD
+filtered_fix_tidy.LD <- filter.LD(df = filtered_fix_tidy, threshold = 0.4, metric = "D")
+
+
+
+```
+
+
+
+
+---------------------------OLD------------------------------------------
+
 ## Chunk 12: Export data using radiator and vcfR
 Radiator exports data to a variety of formats from a tidy dataframe. To take advantage of this, we need to reformat our final tidy dataframe to emulate radiator's expectations. Then, we call on radiator for export. 
 
