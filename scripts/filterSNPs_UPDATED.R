@@ -197,7 +197,7 @@ filter_all <- function(gt_tidy_fltr, Imiss = Imiss, Lmiss = Lmiss, interval = 5,
 
         cat("There are", nrow(missing_indv), "samples with >", Imiss, "% missing data that will be removed from the dataset;\n", nrow(keep_indv), "samples remain.\n\n")
         
-        cat("There are ", nrow(missing_loci), "SNPs that are missing from >= ", Lmiss, "% of individuals that will be removed from the dataset and ", nrow(ridonkulous_coverage_loci), "SNPs with coverage higher than the overall mean + 2 standard deviations.", nrow(keep_loci), "SNPs remain.")  
+        cat("There are ", nrow(missing_loci), "SNPs that are missing from >= ", Lmiss, "% of individuals that will be removed from the dataset and ", nrow(ridonkulous_coverage_loci), "SNPs with coverage higher than the overall mean + 2 standard deviations.", nrow(fix_tidy_filt1), "SNPs remain.")  
         return(list(fix_tidy_filt1, gt_tidy_filt1, keep_indv, keep_loci))
       }
 

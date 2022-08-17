@@ -120,9 +120,9 @@ The dark blue line in each graph is the mean.
 ```{r stats raw, fig.height=20, fig.width=10, message=FALSE, warning=FALSE}
 #setwd("...") #(if desired, else comment out)
 # load stats files - O'Leary ----
-file_directory <- "../data/"
-file_prefix <- "CNR_POPs2.snps"
-popmap_file <- "popmap_allCNR"
+file_directory <- "../data/snails/"
+file_prefix <- "UroFull_M1n6"
+popmap_file <- "popmap_full"
 
 #Load stats files for viz
 ind_stats_raw <- read.ind.stats(dir = file_directory, vcf = file_prefix) #Requires the output files from vcftools with the following extensions: .idepth, .imiss, .het
@@ -143,7 +143,7 @@ Once we've visualized our data in terms of heterozygosity (H) and read ratio dev
 ```{r}
 popmap <- read_tsv(paste0(file_directory, popmap_file, ".txt"), col_names = FALSE) %>% rename(Indiv = X1, Pop = X2)
 
-raw_vcf <- vcfR::read.vcfR(paste0(file_directory,file_prefix,".vcf")) #This takes a minute
+raw_vcf <- vcfR::read.vcfR(paste0(file_directory,file_prefix,".recode.vcf")) #This takes a minute
 
 
 #identify putative paralogs and plot - this may take a long time
@@ -151,14 +151,15 @@ paralog_calcs <- HDplot(raw_vcf) %>%
   arrange(D)
 
 #Create heterozygosity vs read ratio deviation plot
-paralog_calcs %>% ggplot()+geom_point(aes(x=H,y=D)) + 
+paralog_calcs %>% ggplot()+geom_point(aes(x=H,y=D), alpha = 0.1) + 
   scale_y_continuous(name = "D", breaks = seq(-20, 20, by = 2)) +
   scale_x_continuous(name = "H", breaks = seq(0, 1, by = 0.05)) +
-  ggtitle("Heterozygosity (H) vs Read Ratio Deviation (D)")
+  ggtitle("Heterozygosity (H) vs Read Ratio Deviation (D)") +
+  geom_hline(yintercept = c(-4, 4), color = "blue", linetype = "dashed", size = 1.1)
 
 #Set limits for H and D based on plot from above
-H_lim <- 0.6
-D_lim <- 3.5
+H_lim <- 0.45
+D_lim <- 4
 
 
 #Create heterozygosity vs read ratio plot, if wanted
