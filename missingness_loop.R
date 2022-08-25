@@ -22,6 +22,7 @@ library(radiator)
 library(SeqArray)
 library(genetics)
 library(whoa)
+library(openxlsx)
 
 #Source custom functions (change paths accordingly if needed)
 source("scripts/ggplot.R")
@@ -219,7 +220,7 @@ stats.df.temp <- tibble(min_mean_depth = min.mean.depth,
 
 stats.df <- bind_rows(stats.df, stats.df.temp)
 
-write.xlsx(stats.df, file = "G://My Drive/Personal_Drive/Collaborations/Snails/Filter_test.xlsx")
+write.xlsx(stats.df, file = "G://My Drive/Personal_Drive/Collaborations/Snails/Filter_test.xlsx", overwrite = TRUE)
 
 #Free up memory from unused objects
 gc()
@@ -229,6 +230,12 @@ gc()
   }
 }
 
-stats.df <- stats.df %>% mutate(max_mean_depth = as.character(max_mean_depth)) %>% arrange(desc(Indvs_final, Loci_one_SNP))
+stats.df_final <- stats.df %>% mutate(max_mean_depth = as.character(max_mean_depth)) %>% arrange(desc(Indvs_final)) %>% 
+  mutate(Indvs_rank = seq(1:400)) %>% 
+  arrange(desc(Loci_one_SNP)) %>% 
+  mutate(Loci_rank = seq(1:400)) %>% 
+  mutate(Total_rank = Indvs_rank + Loci_rank) %>% 
+  arrange(Total_rank)
+  
 
-write.xlsx(stats.df, file = "G://My Drive/Personal_Drive/Collaborations/Snails/Filter_test.xlsx")
+write.xlsx(stats.df_final, file = "G://My Drive/Personal_Drive/Collaborations/Snails/Filter_test_Final.xlsx")
