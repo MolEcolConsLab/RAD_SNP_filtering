@@ -519,8 +519,17 @@ fix_tidy_filt_final %>% dplyr::select(CHROM, POS) %>% dplyr::mutate(CHROM = as.i
 
 
 
+
+
+
 ## END MAIN SCRIPT
-The chunk 13 can be used if wanting to filter for LD in a reference-based workflow, but is not relevant if using a de novo workflow or microhaplotypes.
+Chunk 13 can be used if wanting to filter for LD in a reference-based workflow, but is not relevant if using a de novo workflow or microhaplotypes.
+
+
+
+
+
+
 
 
 ## Chunk 13: Import filtered vcf with LD annotations
