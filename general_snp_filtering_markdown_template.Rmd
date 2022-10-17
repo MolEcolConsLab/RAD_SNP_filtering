@@ -120,9 +120,9 @@ The dark blue line in each graph is the mean.
 ```{r stats raw, fig.height=20, fig.width=10, message=FALSE, warning=FALSE}
 #setwd("...") #(if desired, else comment out)
 # load stats files - O'Leary ----
-file_directory <- "../data/snails/"
-file_prefix <- "UroFull_M1n6"
-popmap_file <- "popmap_full"
+file_directory <- ""
+file_prefix <- "" #The part before ".vcf"
+popmap_file <- "" #The part before ".txt"
 
 #Load stats files for viz
 ind_stats_raw <- read.ind.stats(dir = file_directory, vcf = file_prefix) #Requires the output files from vcftools with the following extensions: .idepth, .imiss, .het
@@ -507,14 +507,20 @@ plot_final_het_denovo(final_SNPs_per_locus, final_obs_het_indv)
 ```{r}
 #Export remaining individuals to whitelist text file for filtering original VCF
 gt_tidy_filt_final %>% dplyr::select(Indiv) %>% distinct(Indiv) %>% 
-  write_tsv(file = "Whitelist_indivs.txt")
+  write_tsv(file = "Whitelist_indivs.txt", col_names = FALSE)
 
 #Export remaining individuals to whitelist text file for filtering original VCF
 fix_tidy_filt_final %>% dplyr::select(CHROM, POS) %>% dplyr::mutate(CHROM = as.integer(CHROM)) %>% 
   distinct(CHROM, POS) %>% dplyr::arrange(CHROM, POS) %>%
-  write_tsv(file = "Whitelist_loci.txt")
+  write_tsv(file = "Whitelist_loci.txt", col_names = FALSE)
 ```
 
+
+
+
+
+## END MAIN SCRIPT
+The chunk 13 can be used if wanting to filter for LD in a reference-based workflow, but is not relevant if using a de novo workflow or microhaplotypes.
 
 
 ## Chunk 13: Import filtered vcf with LD annotations
