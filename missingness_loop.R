@@ -34,9 +34,9 @@ source("scripts/HDplot.R")
 
 options(dplyr.summarise.inform = FALSE) #Shut down notices for summarise (they're annoying)
 
-file_directory <- "../data/snails/"
-file_prefix <- "UroFull_M1n6"
-popmap_file <- "popmap_full"
+file_directory <- "G://My Drive/Personal_Drive/RAD/SER_SNP_ID/"
+file_prefix <- "SNP_filtering/vcftools_out/m3_M2_n2.snps"
+popmap_file <- "SER_popmap"
 
 popmap <- read_tsv(paste0(file_directory, popmap_file, ".txt"), col_names = FALSE) %>% rename(Indiv = X1, Pop = X2)
 
@@ -52,11 +52,12 @@ paralog_calcs %>% ggplot()+geom_point(aes(x=H,y=D), alpha = 0.1) +
   scale_y_continuous(name = "D", breaks = seq(-20, 20, by = 2)) +
   scale_x_continuous(name = "H", breaks = seq(0, 1, by = 0.05)) +
   ggtitle("Heterozygosity (H) vs Read Ratio Deviation (D)") +
-  geom_hline(yintercept = c(-4, 4), color = "blue", linetype = "dashed", size = 1.1)
+  geom_hline(yintercept = c(-3, 3), color = "blue", linetype = "dashed", size = 1.1) + 
+  geom_vline(xintercept = 0.65, color = "red", linetype = "dashed", size = 1.1)
 
 #Set limits for H and D based on plot from above
-H_lim <- 0.45
-D_lim <- 4
+H_lim <- 0.65
+D_lim <- 3
 
 
 #Create heterozygosity vs read ratio plot, if wanted
@@ -122,10 +123,16 @@ gt_meta <- raw_vcf_tidy$meta
 #rm(raw_vcf_tidy)
 
 ## Step 1: set criteria below which very low-depth loci will be called as missing. Consider setting this to 2m
-min_depth_indv <- 6 #Minimum depth for a locus to be included in subsequent analyses
+##UPDATE: We should not use this filter. The stacks program accounts for what we were trying to filter here. For now, just edited the script below so it will run, but should return and get rid of the whole "gt_DP_recode" column.
+
+## Do not use this code
+#min_depth_indv <- 6 #Minimum depth for a locus to be included in subsequent analyses
 
 #Recode loci in each individual as missing based on the threshold above
-gt_tidy <- gt_tidy %>% mutate(gt_DP_recode = ifelse(gt_DP < min_depth_indv, NA, gt_DP))
+#gt_tidy <- gt_tidy %>% mutate(gt_DP_recode = ifelse(gt_DP < min_depth_indv, NA, gt_DP))
+
+## Use this code instead
+gt_tidy <- gt_tidy %>% mutate(gt_DP_recode = gt_DP)
 
 #Calculate missingness per individual
 all_indv <- gt_tidy %>% group_by(Indiv) %>% 
@@ -139,10 +146,10 @@ p0.1 <- ggplot(all_indv, aes(x = percent_missing)) +
 p0.1 #look at this to gauge and tweak threshold for failed vs. passed samples
 
 
-Ipass.vec <- c(70, 75, 80, 85)
+Ipass.vec <- c(75, 80, 85, 90)
 Imiss.vec <- c(20, 30, 40, 50, 60) #After removing failed individuals, filter individuals that still have this much missing data or more
 Lmiss.vec <- c(10, 15, 20, 25, 30) #After removing failed individuals, remove loci that are missing in this percent of individuals
-min.mean.depth.vec <- c(25, 50)
+min.mean.depth.vec <- c(10, 20)
 max.mean.depth.vec <- c(75, Inf)
 int <- 2
 
@@ -220,7 +227,7 @@ stats.df.temp <- tibble(min_mean_depth = min.mean.depth,
 
 stats.df <- bind_rows(stats.df, stats.df.temp)
 
-write.xlsx(stats.df, file = "G://My Drive/Personal_Drive/Collaborations/Snails/Filter_test.xlsx", overwrite = TRUE)
+write.xlsx(stats.df, file = "G://My Drive/Personal_Drive/RAD/SER_SNP_ID/SNP_filtering/Filter_test.xlsx", overwrite = TRUE)
 
 #Free up memory from unused objects
 gc()
@@ -238,4 +245,4 @@ stats.df_final <- stats.df %>% mutate(max_mean_depth = as.character(max_mean_dep
   arrange(Total_rank)
   
 
-write.xlsx(stats.df_final, file = "G://My Drive/Personal_Drive/Collaborations/Snails/Filter_test_Final.xlsx")
+write.xlsx(stats.df_final, file = "G://My Drive/Personal_Drive/RAD/SER_SNP_ID/SNP_filtering/Filter_test.xlsx", overwrite = TRUE)

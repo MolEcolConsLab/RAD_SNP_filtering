@@ -1,0 +1,487 @@
+---
+title: "Kinship"
+author: "John Swenson"
+date: "10/28/2021"
+output: pdf_document
+---
+
+Run through with each set
+
+## Format data for simulations and relationship inference with CKMRSim
+###See this website for helpful tips: https://rdrr.io/github/eriqande/CKMRsim/man/
+###And here is how to open a vignette:
+####vignette("CKMRsim-example-1")
+####vignette("CKMRsim-example-2-microsatellites")
+####vignette("CKMRsim-simulating-linked-markers") #Seems like this might be the one for microhaplotypes
+
+```{r Microhaplotype filtering}
+#remotes::install_github("eriqande/CKMRsim")
+library(CKMRsim)
+#Need to install Mendel, and can do that through CKMRSim below
+# if(system.file("bin", package = "CKMRsim") == "") {
+#   install_mendel(Dir = system.file(package = "CKMRsim"))
+# }
+
+library(vcfR)
+library(tidyverse)
+library(ggpubr)
+
+#source functions
+source("./scripts/kinship_functions.R")
+
+set <- "set4"
+file_directory <- paste0("G://My Drive/Personal_Drive/RAD/SER_SNP_ID/02_SNP_filtering/microhaps/", set, "/")
+popmap_file <- paste0("G://My Drive/Personal_Drive/RAD/SER_SNP_ID/02_SNP_filtering/microhaps/", set, "/popmap_", set, ".txt")
+
+#Specify location of SNP file
+input_vcf.snps <- paste0(file_directory, "final_loci/populations.snps.vcf")
+#Specify location of haplotype file
+input_vcf.haps <- paste0(file_directory, "final_loci/populations.haps.vcf")
+
+#Read in population map
+popmap <- read_tsv(popmap_file, col_names = FALSE) %>% 
+  rename(Indiv = X1, Pop = X2)
+
+#Read in haplotype vcf file and parse
+vcf.haps <- vcfR::read.vcfR(input_vcf.haps)
+vcf_tidy.haps.filt <- vcfR2tidy(vcf.haps)
+fix_tidy.haps.filt <- vcf_tidy.haps.filt$fix
+gt_tidy.haps.filt <- vcf_tidy.haps.filt$gt
+
+#Read in SNP vcf file and parse
+vcf.snps <- vcfR::read.vcfR(input_vcf.snps)
+vcf_tidy.snps.filt <- vcfR2tidy(vcf.snps)
+fix_tidy.snps.filt <- vcf_tidy.snps.filt$fix
+gt_tidy.snps.filt <- vcf_tidy.snps.filt$gt
+
+#Check position of SNPs
+fix_tidy.snps.filt %>% count(POS) %>% 
+  arrange(desc(POS))
+
+
+```
+
+
+
+```{r CKMRSim Power Analysis}
+#Write "microhaps only" for the object "loci" if wanting to exclude bi-allelic SNPs and only use microhaplotypes for CKMRSim. By default, keep both SNPs and microhaplotypes
+# loci <- "" 
+# 
+# if(loci == "microhaps only"){ #Keep only multi-allelic haplotypes
+#   gt_tidy.haps.filt <- gt_tidy.haps %>% dplyr::inner_join(blat.microhaps, by = "ChromKey")
+#   } else{ #Keep all SNPs and haplotypes that passed the filters in the previous chunk
+#     #Confirmed that CHROM and ChromKey columns match in snp and haplotype files, so can use one to filter the other
+#     gt_tidy.haps.filt <- gt_tidy.haps %>% dplyr::inner_join(snps.final, by = "ChromKey") %>% 
+#       dplyr::select(-starts_with("POS")) #SNPs and haplotypes have different positions - all the positions are 1 for haplotypes. We want to analyze them as haplotypes, so we can ignore the position.
+#   }
+
+
+#Check how many loci are missing in nx number of individuals or more
+nx <- 2
+gt_tidy.haps.filt %>% group_by(ChromKey) %>%
+  summarize(missing_indvs = sum(is.na(gt_GT) == TRUE)) %>%
+  filter(missing_indvs >= nx) %>%
+  nrow()
+# 
+#Look at distribution of microhaplotype alleles
+ # gt_tidy.haps.filt %>% group_by(gt_GT) %>%
+ #   summarize(n = n()) %>%
+ #   arrange(desc(n)) %>%
+ #   View()
+#   
+# #Visualize distribution of rarer haplotypes
+  # gt_tidy.haps.filt %>% filter(gt_GT != "0/0" & gt_GT != "0/1" & gt_GT != "0/2" & gt_GT != "1/1" & gt_GT != "1/2") %>%
+  #   ggplot(aes(x = gt_GT)) +
+  #   geom_histogram(stat = "count")
+
+
+#------------------Format dataframe for CKMRSim-------------------------
+#Reformat columns and convert to long format
+long_genos.haps <- gt_tidy.haps.filt %>%
+  #Split gt_GT column into gene copy (first is 1, second is 2) and allele (use the number + 1)
+  separate(col = gt_GT, sep = "/", into = c("Allele_A.temp", "Allele_B.temp")) %>% 
+  mutate(gene_copy.1 = as.numeric(Allele_A.temp) + 1, gene_copy.2 = as.numeric(Allele_B.temp) + 1) %>%
+  pivot_longer(cols = starts_with("gene_copy"),
+                               names_to = "gene_copy",
+                               values_to = "Allele"
+                               ) %>% 
+         mutate(Locus = paste0(ChromKey, "_", POS),
+                gene_copy = ifelse(gene_copy == "gene_copy.1", "1", "2")) %>%
+  dplyr::select(Indiv, Locus, gene_copy, Allele)
+
+head(long_genos.haps)
+
+#Isolate microhaps with > 2 alleles
+microhaps.real <- long_genos.haps %>% dplyr::group_by(Locus) %>% 
+  dplyr::count(Allele) %>% 
+  dplyr::filter(Allele > 2 & n > 0) %>% 
+  distinct(Locus) %>% 
+  pull(Locus)
+
+#Compare number of SNP loci with microhaplotypes
+long_genos.haps %>% distinct(Locus) %>% pull(Locus) %>% length()
+length(microhaps.real)
+
+#If wanting to only use microhaps with > 2 alleles, then use the below code; otherwise comment out
+#long_genos.haps <- long_genos.haps %>% dplyr::filter(Locus %in% microhaps.real)
+
+#Histogram of microhaplotype alleles)
+long_genos.haps %>% dplyr::filter(Allele > 2) %>% 
+  distinct(Locus, .keep_all = TRUE) %>% 
+  ggplot(aes(x = Allele)) + 
+  geom_histogram(stat = "count") + 
+  scale_x_continuous(breaks = c(min(long_genos.haps$Allele, na.rm = TRUE):max(long_genos.haps$Allele, na.rm = TRUE)))
+
+#How many alleles for each haplotype?
+long_genos.haps %>% group_by(Locus) %>% 
+  summarize(num.alleles = max(Allele, na.rm = TRUE)) %>% 
+  count(num.alleles)
+
+#Save distinct loci as vector for indexing
+loci.haps <- long_genos.haps %>% distinct(Locus) %>% pull(Locus)
+
+#Compute allele frequencies
+allele_freqs.haps <- long_genos.haps %>%
+  dplyr::count(Locus, Allele) %>%
+  group_by(Locus) %>%
+  mutate(Freq = n / sum(n),
+         Chrom = "Unk",
+         Pos = as.integer(factor(Locus, levels = loci.haps))) %>%
+  ungroup() %>%
+  dplyr::select(Chrom, Pos, Locus, Allele, Freq) %>%
+  arrange(Pos, desc(Freq)) %>%
+  mutate(AlleIdx = NA,
+         LocIdx = NA) %>%
+  dplyr::filter(!is.na(Allele))
+
+head(allele_freqs.haps)
+
+#Prepare allele frequency dataframe for CKMRSim
+afreqs_ready.haps <- reindex_markers(allele_freqs.haps)
+head(afreqs_ready.haps)
+
+
+
+#----------------------Run CKMRSim without physical linkage----------------------
+#Create ckmr object for simulating relationships
+C.haps <- create_ckmr(
+  D = afreqs_ready.haps,
+  kappa_matrix = kappas[c("PO", "FS", "HS", "HAN", "U"), ],
+  ge_mod_assumed = ge_model_TGIE,
+  ge_mod_true = ge_model_TGIE,
+  ge_mod_assumed_pars_list = list(epsilon = 0.005),
+  ge_mod_true_pars_list = list(epsilon = 0.005)
+)
+
+#Simulate relationships
+Qs.haps <- simulate_Qij(
+  C.haps, 
+  sim_relats = c("HS", "FS", "PO", "HAN", "U"), 
+  calc_relats = c("HS", "FS", "PO", "HAN", "U"))
+
+#Returns log-likelihood ratios in a tidy format
+PO_U_logls.haps <- extract_logls(Qs.haps, numer = c(PO = 1), denom = c(U = 1))
+HS_U_logls.haps <- extract_logls(Qs.haps, numer = c(HS = 1), denom = c(U = 1))
+HS_HAN_logls.haps <- extract_logls(Qs.haps, numer = c(HS = 1), denom = c(HAN = 1))
+
+#Graphs log likelihood ratios of true relationships - whatever I specify as the first setting is the relationship I'm looking to see ... so HS if wanting to see how well HS are identified, and PO if wanting to see how well PO are identified
+ggplot(PO_U_logls.haps,
+            aes(x = logl_ratio, fill = true_relat)) +
+  geom_density(alpha = 0.25) +
+  ggtitle("PO/U Logl Ratio")
+
+ggplot(HS_U_logls.haps,
+            aes(x = logl_ratio, fill = true_relat)) +
+  geom_density(alpha = 0.25) +
+  ggtitle("HS/U Logl Ratio")
+
+ggplot(HS_HAN_logls.haps,
+            aes(x = logl_ratio, fill = true_relat)) +
+  geom_density(alpha = 0.25) +
+  ggtitle("HS/HAN Logl Ratio")
+
+
+#Estimate false positive and false negative rates
+#Can add argument "lambda_stars = -100" if I want to set a cutoff for HSPs to -100
+#PO vs U
+PO_is.haps <- mc_sample_simple(Qs.haps,
+                 nu = "PO",
+                 de = "U")
+
+#HS vs U
+HS_is.haps <- mc_sample_simple(Qs.haps,
+                 nu = "HS",
+                 de = "U",
+                 lambda_stars = seq(-10, 10, by = 0.1)) #Include lambda_stars to calculate FPR for different logl ratios; base this on the graph generated above
+
+#From the vignette: My general recommendation for being confident about not erroneously identifying unrelated individuals as related pairs is to require that the FPR be about 10 to 100 times smaller than the reciprocal of the number of comparisons
+
+#Number of samples
+n <- nrow(popmap)
+FPR.cutoff <- 0.1 * (n^2) ^ -1
+
+#Filter for FPRs that are smaller than the cutoff
+HS_is.haps_filt <- HS_is.haps %>% filter(FPR < FPR.cutoff)
+
+min(HS_is.haps_filt$Lambda_star) #Look at the minimum values for the log likelihood ratio that works with the FPR cutoff. Can make this the logl.cutoff value or set the value based on the graph
+
+HS_is.haps_neg2_pos2 <- mc_sample_simple(Qs.haps,
+                 nu = "HS",
+                 de = "U",
+                 lambda_stars = seq(-2, 2, by = 0.1)) #Include lambda_stars to calculate FPR for different logl ratios)
+
+HS_is.haps_neg2_pos2 %>% filter(FPR <= FPR.cutoff) %>% 
+  arrange(desc(FPR)) %>% 
+  slice(1) #Find the logl ratio that gives the largest FPR that is greater than the cutoff
+
+#Check for duplicate genotypes
+(matches <- find_close_matching_genotypes(LG = long_genos.haps,
+                                          CK = C.haps,
+                                          max_mismatch = 10))
+
+
+#---------------------------------Run CKMRSim with physical linkage----------------
+head(afreqs_ready.haps)
+fake_chromo <- geometric_chromo_lengths(
+  n = 40, #Number of chromosomes - just guessing
+  L = 5.8, #length of genome in gigbases
+  sl = 0.25 #length of smallest chromosome as fraction of longest chromosome - just guessing
+)
+
+#Randomly place variants across chromosomes
+afreqs_ready.haps_link <- sprinkle_markers_into_genome(afreqs_ready.haps, fake_chromo$chrom_lengths)
+
+#Create CKMR object
+ckmr_link <- create_ckmr(
+  D = afreqs_ready.haps_link,
+  kappa_matrix = kappas[c("PO", "FS", "HS", "HAN", "U"), ],
+  ge_mod_assumed = ge_model_TGIE,
+  ge_mod_true = ge_model_TGIE,
+  ge_mod_assumed_pars_list = list(epsilon = 0.005),
+  ge_mod_true_pars_list = list(epsilon = 0.005)
+)
+
+#Simulate relationships with linkage
+Qs_link_BIG <- simulate_Qij(
+  ckmr_link, 
+  calc_relats = c("PO", "FS", "HS", "HAN", "U"),
+  sim_relats = c("PO", "FS", "HS", "HAN", "U"),
+  unlinked = FALSE, 
+  pedigree_list = pedigrees
+)
+
+#Look at PO vs U 
+PO_U_gg <- Qs_link_BIG %>%
+  extract_logls(numer = c(PO = 1), denom = c(U = 1)) %>%
+  ggplot(aes(x = logl_ratio, fill = true_relat)) +
+  geom_density(alpha = 0.25) +
+  ggtitle("PO/U Logl Ratio")
+
+PO_U_gg
+
+HS_U_gg <- Qs_link_BIG %>%
+  extract_logls(numer = c(PO = 1), denom = c(U = 1)) %>%
+  ggplot(aes(x = logl_ratio, fill = true_relat)) +
+  geom_density(alpha = 0.25) +
+  ggtitle("HS/U Logl Ratio")
+
+HS_U_gg
+
+HS_HAN_gg <- Qs_link_BIG %>%
+  extract_logls(numer = c(PO = 1), denom = c(U = 1)) %>%
+  ggplot(aes(x = logl_ratio, fill = true_relat)) +
+  geom_density(alpha = 0.25) +
+  ggtitle("HS/HAN Logl Ratio")
+
+HS_HAN_gg
+
+#Check probability that unrelated individuals will be incorrectly called an HS based on the HS/HAN likelihood ratio
+mc_sample_simple(
+  Q = Qs.haps,
+  Q_for_fnrs = Qs_link_BIG,
+  nu = "HS",
+  de = "HAN",
+  method = "IS"
+)
+
+#Check probability that an HAN will be mistaken for a HSP
+mc_sample_simple(
+  Q = Qs_link_BIG,
+  nu = "HS",
+  de = "HAN",
+  tr = "HAN",
+  method = "vanilla"
+)
+
+#Probability is low
+```
+
+
+
+```{r Kinship with SNPs}
+#Read in SNP vcf file and parse
+vcf.snps <- vcfR::read.vcfR(input_vcf.snps)
+vcf_tidy.snps <- vcfR2tidy(vcf.snps)
+fix_tidy.snps <- vcf_tidy.snps$fix
+gt_tidy.snps <- vcf_tidy.snps$gt
+
+fix_tidy.snps %>% group_by(CHROM) %>% 
+  summarize(n()) %>% 
+  arrange(as.integer(CHROM))
+
+whitelist.snps %>% group_by(CHROM) %>% 
+  summarize(n())
+
+
+gt_tidy %>% group_by(ChromKey) %>% 
+  summarize(missing_indvs = sum(is.na(gt_GT) == TRUE)) %>% 
+  filter(missing_indvs <= 2)
+
+mutate(allele_A = ifelse(gt_GT == "0/0", 2, ifelse(gt_GT == "0/1", 1, 0)), allele_B = ifelse(gt_GT == "0/0", 0, ifelse(gt_GT == "0/1", 1, 2)))
+
+#Reformat columns and convert to long format
+long_genos <- gt_tidy %>%
+  mutate(gene_copy1 = ifelse(allele_A == 1 | allele_A == 2, "1", "2"),
+                             gene_copy2 = ifelse(allele_B == 1 | allele_B == 2, "2", "1")) %>% 
+  pivot_longer(cols = starts_with("gene_copy"),
+                               names_to = "gene_copy",
+                               values_to = "Allele"
+                               ) %>% 
+         mutate(Locus = paste0(ChromKey, "_", POS),
+                gene_copy = ifelse(gene_copy == "gene_copy1", "1", "2")) %>%
+  dplyr::select(Indiv, Locus, gene_copy, Allele)
+
+head(long_genos)
+
+#Save distinct loci as vector for indexing
+loci <- long_genos %>% distinct(Locus)
+loci <- loci$Locus #Above saves as a one column tibble, so we convert to a vector
+
+#Compute allele frequencies
+allele_freqs <- long_genos %>%
+  count(Locus, Allele) %>%
+  group_by(Locus) %>%
+  mutate(Freq = n / sum(n),
+         Chrom = "Unk",
+         Pos = as.integer(factor(Locus, levels = loci))) %>%
+  ungroup() %>%
+  select(Chrom, Pos, Locus, Allele, Freq) %>%
+  arrange(Pos, desc(Freq)) %>%
+  mutate(AlleIdx = NA,
+         LocIdx = NA) %>%
+  filter(!is.na(Allele))
+
+head(allele_freqs)
+
+#Prepare allele frequency dataframe for CKMRSim
+afreqs_ready <- reindex_markers(allele_freqs)
+
+head(afreqs_ready)
+
+#Create ckmr object for simulating relationships
+C <- create_ckmr(afreqs_ready)
+
+#Simulate relationships
+Qs <- simulate_Qij(C, sim_relats = c("HS", "PO"), calc_relats = c("HS", "PO"))
+
+#Returns log-likelihood ratios in a tidy format
+extract_logls(Qs, numer = c(PO = 1, HS = 1), denom = (U = 1))
+```
+
+
+
+
+
+
+
+
+
+```{r relationship inference w/ Sequoia}
+library(sequoia)
+library(tidyverse)
+
+#Check genotype data to see if it's in the right format
+gt <- extract.gt()
+CheckGeno(vcf)
+```
+
+#CKMRSim vignettes
+```{r}
+library(tidyverse)
+
+geno_path <- system.file("extdata/kelp_genos_used_two_col.csv.gz", package = "CKMRsim")
+
+genos1 <- suppressWarnings(read_csv(geno_path))
+genos1[1:10, 1:10]
+
+adults <- read_rds(file = system.file("extdata/kelp_adults.rds", package = "CKMRsim"))
+juvies <- read_rds(file = system.file("extdata/kelp_juveniles.rds", package = "CKMRsim"))
+
+
+life_stages <- bind_rows( #Make tibble that only contains life stage for each fish ID
+  tibble(stage = "adult",
+         NMFS_DNA_ID = adults),
+  tibble(stage = "juvenile",
+         NMFS_DNA_ID = juvies)
+) %>%
+  filter(NMFS_DNA_ID %in% genos1$NMFS_DNA_ID)
+
+life_stages %>% 
+  count(stage)
+
+long_markers #Format for allele frequency that CKMRSim expects
+
+# make note of the current order of loci in the data set
+nc <- ncol(genos1)
+loci <- names(genos1)[seq(2, nc, by = 2)] #Record the name of each locus without the "_1" designation (which was applied to every other column for each locus)
+
+#  reset the locus names; str_c is a lot like paste0
+names(genos1)[seq(3, nc, by = 2)] <- str_c(names(genos1)[seq(2, nc, by = 2)], "1", sep = ".")
+names(genos1)[seq(2, nc, by = 2)] <- str_c(names(genos1)[seq(2, nc, by = 2)], "2", sep = ".")
+
+# then make some long format genotypes
+long_genos <- genos1 %>% 
+  gather(key = "loc", value = "Allele", -NMFS_DNA_ID) %>%
+  separate(loc, into = c("Locus", "gene_copy"), sep = "\\.") %>%
+  mutate(Allele = as.character(Allele)) %>%
+  mutate(Allele = ifelse(Allele == "0", NA, Allele)) %>%
+  rename(Indiv = NMFS_DNA_ID)
+
+alle_freqs <- long_genos %>%
+  count(Locus, Allele) %>% #Count the number of times each locus and allele show up in the dataset
+  group_by(Locus) %>%
+  mutate(Freq = n / sum(n), #Calculate the frequency of each allele
+         Chrom = "Unk",
+         Pos = as.integer(factor(Locus, levels = loci))) %>%
+  ungroup() %>%
+  select(Chrom, Pos, Locus, Allele, Freq) %>%
+  arrange(Pos, desc(Freq)) %>%
+  mutate(AlleIdx = NA,
+         LocIdx = NA) %>%
+  filter(!is.na(Allele))
+
+afreqs_ready <- reindex_markers(alle_freqs)
+
+ex1_ckmr <- create_ckmr(
+  D = afreqs_ready,
+  kappa_matrix = kappas[c("PO", "FS", "HS", "U"), ],
+  ge_mod_assumed = ge_model_TGIE,
+  ge_mod_true = ge_model_TGIE,
+  ge_mod_assumed_pars_list = list(epsilon = 0.005),
+  ge_mod_true_pars_list = list(epsilon = 0.005)
+)
+
+#Simulate relationships
+ex1_Qs <- simulate_Qij(ex1_ckmr, 
+                       calc_relats = c("PO", "HS", "U"),
+                       sim_relats = c("PO", "HS", "U") )
+
+#Returns log-likelihood ratios in a tidy format
+PO_U_logls <- extract_logls(ex1_Qs,
+                            numer = c(PO = 1),
+                            denom = c(U = 1))
+
+PO_U_logls <- extract_logls(ex1_Qs, numer = c(PO = 1), denom = c(U = 1))
+
+HS_U_logls <- extract_logls(Qs.haps, numer = c(HS = 1), denom = c(U = 1))
+```

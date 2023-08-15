@@ -247,11 +247,17 @@ There are three steps to the next chunk:
 - Step 2: based on the plot in the plot window, decide on the degree of data missingness that constitutes calling an individual as "failed". These individuals will be filtered before running any additional calculations. **This is an important step especially for smaller datasets where a number of samples didn't sequence well, because they will count towards the percentage of the total and can result in good loci being thrown out. In our experience, there is often a very obvious break between samples that worked and those that failed, which should help set this threshold as appropriate for the data**
 - Step 3: set additional thresholds for filtering individuals and loci based on data missingness values calculated *after* removing failed individuals and low depth loci.
 ```{r}
-## Step 1: set criteria below which very low-depth loci will be called as missing. Consider setting this to 2m
-min_depth_indv <- 6 #Minimum depth for a locus to be included in subsequent analyses
+## Step 1: set criteria below which very low-depth loci will be called as missing. Consider setting this to 2m 
+##UPDATE: We should not use this filter. The stacks program accounts for what we were trying to filter here. For now, just edited the script below so it will run, but should return and get rid of the whole "gt_DP_recode" column.
+
+## Do not use this code
+#min_depth_indv <- 6 #Minimum depth for a locus to be included in subsequent analyses
 
 #Recode loci in each individual as missing based on the threshold above
-gt_tidy <- gt_tidy %>% mutate(gt_DP_recode = ifelse(gt_DP < min_depth_indv, NA, gt_DP))
+#gt_tidy <- gt_tidy %>% mutate(gt_DP_recode = ifelse(gt_DP < min_depth_indv, NA, gt_DP))
+
+## Use this code instead
+gt_tidy <- gt_tidy %>% mutate(gt_DP_recode = gt_DP)
 
 #Calculate missingness per individual
 all_indv <- gt_tidy %>% group_by(Indiv) %>% 
