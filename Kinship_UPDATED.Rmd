@@ -29,14 +29,13 @@ library(ggpubr)
 #source functions
 source("./scripts/kinship_functions.R")
 
-set <- "set4"
-file_directory <- paste0("G://My Drive/Personal_Drive/RAD/SER_SNP_ID/02_SNP_filtering/microhaps/", set, "/")
-popmap_file <- paste0("G://My Drive/Personal_Drive/RAD/SER_SNP_ID/02_SNP_filtering/microhaps/", set, "/popmap_", set, ".txt")
+file_directory <- ""
+popmap_file <- ""
 
 #Specify location of SNP file
-input_vcf.snps <- paste0(file_directory, "final_loci/populations.snps.vcf")
+input_vcf.snps <- paste0(file_directory, "populations.snps.vcf")
 #Specify location of haplotype file
-input_vcf.haps <- paste0(file_directory, "final_loci/populations.haps.vcf")
+input_vcf.haps <- paste0(file_directory, "populations.haps.vcf")
 
 #Read in population map
 popmap <- read_tsv(popmap_file, col_names = FALSE) %>% 
@@ -58,7 +57,21 @@ gt_tidy.snps.filt <- vcf_tidy.snps.filt$gt
 fix_tidy.snps.filt %>% count(POS) %>% 
   arrange(desc(POS))
 
+#--------------------------Microhaplotypes only----------------------------------
+#If wanting to focus on microhaplotypes, set the minimum distance allowed between two snps, and the maximum snps allowed at a locus. By default, assumes a locus must have two snps.
+snp.distance <- 100
+min.snps <- 2
+max.snps <- 7
 
+microhaps.final <- filter.microhaps(fix_tidy.snps = fix_tidy.snps, whitelist.blat.loci = whitelist.blat.loci, snp.distance = snp.distance, min.snps = min.snps, max.snps = max.snps)
+
+#Look at histogram of positions
+microhaps.final %>% gghistogram(x = "POS")
+
+#How many final loci?
+microhaps.final %>% dplyr::select(CHROM) %>% 
+  distinct(CHROM) %>% 
+  nrow()
 ```
 
 
