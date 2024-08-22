@@ -197,7 +197,7 @@ max.mean.depth <- Inf
 We will now convert the vcf file into tidy format and simultaneously filter the SNPs HDplot identified as putative paralogs. The meta, fixed, and genotype regions of the vcf file are converted into separate components of a list, but we will just be working with the dataframes corresponding to the fixed and genotype components. The fixed dataframe is used for filtering loci, and the genotype dataframe is used for filtering samples.
 ```{r}
 #Create dataframe of putative paralogs based on thresholds set above
-paralogs <- paralog_calcs %>% filter(H > H_lim & abs(D) > D_lim) %>% 
+paralogs <- paralog_calcs %>% filter(H > H_lim | abs(D) > D_lim) %>% 
   mutate(POS = as.integer(POS))
 
 print(paste0("Identified ", nrow(paralogs), " likely paralogs. These will be removed from the dataset."))
